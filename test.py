@@ -49,9 +49,12 @@ def main():
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed) 
-    
-    TestDataset = ImageLowSemDataset(img_dir = args.test_dir,
-                                       sem_dir = os.path.join(os.path.split(args.test_dir)[0], 'low_semantic'))
+
+    TestDataset = ImageLowSemDataset(
+        img_dir=args.test_dir,
+        sem_dir=os.path.join(os.path.split(args.test_dir)[0], 'low_semantic'),
+        depth_dir=os.path.join(os.path.split(args.test_dir)[0], 'low_depth')
+    )
     test_queue = torch.utils.data.DataLoader(
         TestDataset, batch_size=1, shuffle = False,
         pin_memory=True
@@ -63,11 +66,12 @@ def main():
 
     model.eval()
     with torch.no_grad():
-        for batch_idx, (in_, sem_, imgname_, semname_ ) in enumerate(test_queue):
+        for batch_idx, (in_, sem_, depth_, imgname_, semname_, depthname_) in enumerate(test_queue):
             in_ = in_.cuda()
             sem_ = sem_.cuda()
+            depth_ = depth_.cuda()
             image_name = os.path.splitext(imgname_[0])[0]
-            i, r = model(in_, sem_)
+            i, r, d = model(in_, sem_, depth_)
             u_name = '%s.png' % (image_name)
             print('test processing {}'.format(u_name))
             u_path = save_path + '/' + u_name
