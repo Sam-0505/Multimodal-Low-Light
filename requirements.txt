@@ -1,0 +1,26 @@
+
+torchvision
+numpy
+
+# Image processing
+opencv-python
+Pillow
+matplotlib
+
+# Deep learning models
+transformers
+clip-by-openai
+
+# Computer vision metrics
+scikit-image
+
+# Utilities
+tqdm
+einops
+
+# Segment Anything Model (SAM)
+# Note: If segment_anything is a local module, you may need to install it separately
+# or ensure the segment_anything directory is in your Python path
+# For official SAM installation:
+# pip install git+https://github.com/facebookresearch/segment-anything.git
+
