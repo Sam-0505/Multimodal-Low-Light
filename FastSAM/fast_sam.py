@@ -15,10 +15,10 @@ def parse_args():
     
     # --- Core Arguments ---
     parser.add_argument(
-        "--model_path", type=str, default="../weights/FastSAM-s.pt", help="Path to the FastSAM model weights"
+        "--model_path", type=str, default="/scratch/user/sam0505/Multimodal-Low-Light/weights/FastSAM-s.pt", help="Path to the FastSAM model weights"
     )
     parser.add_argument(
-        "--output_dir", type=str, default="../data/", help="Base directory to save images and masks"
+        "--output_dir", type=str, default="/scratch/user/sam0505/Multimodal-Low-Light/data/", help="Base directory to save images and masks"
     )
     
     # --- Model Config Arguments ---
@@ -109,33 +109,67 @@ def main(args):
     model.to(args.device)
     print(f"Using device: {args.device}")
 
-    dataset_names = ["okhater/lolv2-real","okhater/lolv2-synthetic"]
-    print(f"Preparing to process datasets: {dataset_names}")
+    # Define the local paths to the top-level dataset folders
+    # Assumes script is at /scratch/user/sam0505/Multimodal-Low-Light/FastSAM/
+    # and data is at /scratch/user/sam0505/
+    base_data_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '/scratch/user/sam0505/Multimodal-Low-Light/data'))
+    
+    dataset_paths = [
+        {"name": "lolv2-real", "path": os.path.join(base_data_path, "lolv2-real")},
+        {"name": "lolv2-synthetic", "path": os.path.join(base_data_path, "lolv2-real")}
+    ]
+    
+    print(f"Preparing to process datasets: {[d['name'] for d in dataset_paths]}")
 
-    for dataset_name in dataset_names:
+    for dataset_info in dataset_paths:
+        dataset_name = dataset_info["name"]
+        dataset_path = dataset_info["path"] # Use the local path
+        
         print(f"\n=======================================================")
         print(f"STARTING DATASET: {dataset_name}")
+        print(f"Loading from local path: {dataset_path}")
         print("=======================================================")
 
-        # This will load PIL images and labels
         print(f"Loading '{dataset_name}' (full dataset)...")
         try:
-            ds = load_dataset(dataset_name) 
+            # Load from the local path WITHOUT data_files
+            ds = load_dataset(dataset_path) 
         except Exception as e:
-            print(f"Failed to load dataset {dataset_name}. Make sure you are logged in: `huggingface-cli login`")
+            print(f"Failed to load dataset {dataset_name} from {dataset_path}.")
             print(f"Error: {e}")
-            continue # Skip to the next dataset
+            continue 
 
         print(f"Found splits: {list(ds.keys())}")
         for split_name, split_data in ds.items():
             
             print(f"\n--- Processing split: '{split_name}' ({len(split_data)} images) ---")
             
-            # Create output directories based on dataset and split
-            dataset_folder_name = dataset_name.split('/')[-1] # "lolv2-real"
-            low_dir = os.path.join(args.output_dir, dataset_folder_name, split_name, "low")
-            high_dir = os.path.join(args.output_dir, dataset_folder_name, split_name, "high")
-            mask_dir = os.path.join(args.output_dir, dataset_folder_name, split_name, "masks")
+            try:
+                label_names = split_data.features['label'].names
+                low_label_index = -1
+                high_label_index = -1
+                
+                # Loop and find *both* labels
+                for i, name in enumerate(label_names):
+                    name_lower = name.lower()
+                    if 'input' in name_lower or 'low' in name_lower:
+                        low_label_index = i
+                    elif 'gt' in name_lower or 'high' in name_lower:
+                        high_label_index = i
+                
+                if low_label_index == -1 or high_label_index == -1:
+                    raise Exception(f"Could not find 'low'/'high' or 'Input'/'GT' in label names: {label_names}")
+
+                print(f"Auto-detected labels: LOW='{label_names[low_label_index]}' (Index={low_label_index}), HIGH='{label_names[high_label_index]}' (Index={high_label_index})")
+                
+            except Exception as e:
+                print(f"Fatal Error: Could not determine labels. {e}")
+                continue # Skip to next split
+
+            # Create output directories
+            low_dir = os.path.join(args.output_dir, dataset_name, split_name, "low")
+            high_dir = os.path.join(args.output_dir, dataset_name, split_name, "high")
+            mask_dir = os.path.join(args.output_dir, dataset_name, split_name, "masks")
 
             os.makedirs(low_dir, exist_ok=True)
             os.makedirs(high_dir, exist_ok=True)
@@ -145,34 +179,46 @@ def main(args):
             print(f"Saving HIGH images to: {high_dir}")
             print(f"Saving MASKS to: {mask_dir}")
 
-            # Loop over items (index 'i' is important)
+            low_saved_count = 0
+            high_saved_count = 0
+            unmatched_labels_found = set() # --- DEBUGGING ---
+
             for i, item in enumerate(tqdm(split_data, desc=f"Processing {dataset_name} {split_name} split")):
                 try:
-                    # 'item['image']' is now a PIL Image, not a path
                     input_image = item['image'].convert("RGB") 
-                    label = item['label'] # 0 or 1
-                    
-                    # Create a new filename
+                    label = item['label']
                     output_filename = f"{split_name}_{i:05d}.png"
 
-                    # Save files based on label
-                    if label == 0:
-                        # This is a LOW-LIGHT image
+                    # --- MODIFIED: ADDED AN 'ELSE' BLOCK FOR DEBUGGING ---
+                    if label == low_label_index:
                         low_path = os.path.join(low_dir, output_filename)
                         input_image.save(low_path)
+                        low_saved_count += 1
                         
-                        # Run segmentation and save the mask
                         mask_path = os.path.join(mask_dir, output_filename)
                         run_automatic_segmentation(model, input_image, mask_path, args)
                         
-                    elif label == 1:
-                        # This is a HIGH-LIGHT (Ground Truth) image
+                    elif label == high_label_index:
                         high_path = os.path.join(high_dir, output_filename)
                         input_image.save(high_path)
+                        high_saved_count += 1
+                    
+                    else:
+                        # --- THIS WILL TELL US WHAT'S WRONG ---
+                        unmatched_labels_found.add(label)
+                    # --- END MODIFICATION ---
 
                 except Exception as e:
                     print(f"\nWarning: Failed to process item {i}. Error: {e}")
-                    # Continue to the next image
+            
+            print(f"--- Split '{split_name}' complete ---")
+            print(f"Saved {low_saved_count} LOW images.")
+            print(f"Saved {high_saved_count} HIGH images.")
+            print(f"Generated {low_saved_count} MASKS.")
+            
+            # --- DEBUGGING: PRINT ANY UNMATCHED LABELS ---
+            if unmatched_labels_found:
+                print(f"!!! WARNING: Found {len(unmatched_labels_found)} unmatched labels that were not saved: {unmatched_labels_found}")
     
     print(f"\nProcessing complete for all datasets. All files saved in {args.output_dir}")
 
