@@ -119,22 +119,22 @@ def main(args):
         {
             "dataset_name": "lolv2-real", 
             "split_name": "train", 
-            "path": os.path.join(base_data_path, "lolv2-real", "train")
+            "path": os.path.join(base_data_path, "lolv2-real", "Train")
         },
         {
             "dataset_name": "lolv2-real", 
             "split_name": "test", 
-            "path": os.path.join(base_data_path, "lolv2-real", "test")
+            "path": os.path.join(base_data_path, "lolv2-real", "Test")
         },
         {
             "dataset_name": "lolv2-synthetic", 
             "split_name": "train", 
-            "path": os.path.join(base_data_path, "lolv2-synthetic", "train")
+            "path": os.path.join(base_data_path, "lolv2-real", "Train")
         },
         {
             "dataset_name": "lolv2-synthetic", 
             "split_name": "test", 
-            "path": os.path.join(base_data_path, "lolv2-synthetic", "test")
+            "path": os.path.join(base_data_path, "lolv2-real", "Test")
         }
     ]
     
