@@ -7,6 +7,7 @@ from PIL import Image
 from tqdm import tqdm
 from datasets import load_dataset
 from fastsam import FastSAM, FastSAMPrompt
+import sys
 
 def parse_args():
     """Parses command-line arguments for batch processing."""
@@ -14,13 +15,10 @@ def parse_args():
     
     # --- Core Arguments ---
     parser.add_argument(
-        "--model_path", type=str, default="./weights/FastSAM.pt", help="Path to the FastSAM model weights"
+        "--model_path", type=str, default="../weights/FastSAM-s.pt", help="Path to the FastSAM model weights"
     )
     parser.add_argument(
-        "--output_dir", type=str, default="./output/", help="Directory to save segmented masks"
-    )
-    parser.add_argument(
-        "--split", type=str, default="train", help="Dataset split to process (e.g., 'train')"
+        "--output_dir", type=str, default="../data/", help="Base directory to save images and masks"
     )
     
     # --- Model Config Arguments ---
@@ -55,9 +53,6 @@ def parse_args():
         "--device", type=str, default=device, help="Device to run on (e.g., 'cuda', 'cpu')"
     )
     
-    # Note: All prompt-based arguments (text_prompt, box_prompt, point_prompt) 
-    # have been removed to keep this script simple and automatic.
-    
     return parser.parse_args()
 
 def run_automatic_segmentation(model, input_image, output_path, args):
@@ -80,14 +75,14 @@ def run_automatic_segmentation(model, input_image, output_path, args):
     # 3. This is the key part: We ONLY call everything_prompt() for automatic masks
     ann = prompt_process.everything_prompt()
 
-    # --- START DEBUGGING ---
-    print(f"\n[Debug] Attempting to save to: {output_path}")
+    # --- Debugging ---
     if ann is None or ann.numel() == 0:
-        print("[Debug] !!! WARNING: `everything_prompt()` returned no annotations. Nothing to plot.")
+        print(f"[Debug] !!! WARNING: `everything_prompt()` returned no annotations for {output_path}. Skipping.")
         return  # Exit function, nothing to save
     
-    print(f"[Debug] Found {len(ann)} annotations to plot.")
-    # --- END DEBUGGING ---
+    # --- THIS IS THE CORRECTED LINE ---
+    print(f"[Debug] Found {ann.shape[0]} annotations to plot.")
+    # --- END CORRECTION ---
 
     # 4. Plot and save the fully segmented image
     try:
@@ -100,20 +95,10 @@ def run_automatic_segmentation(model, input_image, output_path, args):
             withContours=args.withContours,
             better_quality=args.better_quality,
         )
-
-        # --- START DEBUGGING 2 ---
-        if os.path.exists(output_path):
-            print(f"[Debug] Successfully saved: {output_path}")
-        else:
-            print(f"[Debug] !!! FAILED TO SAVE: Plot function ran but did not create file.")
-        # --- END DEBUGGING 2 ---
-
     except Exception as e:
-        # --- START DEBUGGING 3 ---
         print(f"\n[Debug] !!! ERROR during plotting or saving: {e}")
         import traceback
         traceback.print_exc()
-        # --- END DEBUGGING 3 ---
 
 def main(args):
     """
@@ -124,53 +109,76 @@ def main(args):
     model.to(args.device)
     print(f"Using device: {args.device}")
 
-    print("Loading dataset 'okhater/lolv2-real'...")
-    try:
-        # You must be logged in: `huggingface-cli login`
-        ds = load_dataset("okhater/lolv2-real", data_files="Train/*/0012*")
-    except Exception as e:
-        print(f"Failed to load dataset. Make sure you are logged in to Hugging Face CLI.")
-        print("Run: `huggingface-cli login` in your terminal.")
-        print(f"Error: {e}")
-        return
+    dataset_names = ["okhater/lolv2-real","okhater/lolv2-synthetic"]
+    print(f"Preparing to process datasets: {dataset_names}")
 
-    # Check if the specified split exists
-    if args.split not in ds:
-        print(f"Error: Split '{args.split}' not found. Available splits: {list(ds.keys())}")
-        return
+    for dataset_name in dataset_names:
+        print(f"\n=======================================================")
+        print(f"STARTING DATASET: {dataset_name}")
+        print("=======================================================")
 
-    split_data = ds[args.split]
-    
-    # Filter for low-light images (label index 0)
-    target_label_index = 0
-    print(f"Filtering for low-light images (label index: {target_label_index})")
-    try:
-        low_light_ds = split_data.filter(lambda example: example['label'] == target_label_index)
-        print(f"Found {len(low_light_ds)} low-light images to process.")
-    except Exception as e:
-        print(f"Failed to filter dataset. Error: {e}")
-        return
-        
-    # Create output directory if it doesn't exist
-    os.makedirs(args.output_dir, exist_ok=True)
-    print(f"Saving masks to {args.output_dir}")
-
-    # Loop over all found low-light images and process them
-    for i, item in enumerate(tqdm(low_light_ds, desc=f"Processing {args.split} split")):
-        input_image = item['image'].convert("RGB")
-        
-        # Create a unique filename for each output image
-        output_filename = f"{args.split}_low_{i:05d}.png"
-        output_path = os.path.join(args.output_dir, output_filename)
-        
+        # This will load PIL images and labels
+        print(f"Loading '{dataset_name}' (full dataset)...")
         try:
-            run_automatic_segmentation(model, input_image, output_path, args)
+            ds = load_dataset(dataset_name) 
         except Exception as e:
-            print(f"\nWarning: Failed to process image {i}. Error: {e}")
-            # Continue to the next image
+            print(f"Failed to load dataset {dataset_name}. Make sure you are logged in: `huggingface-cli login`")
+            print(f"Error: {e}")
+            continue # Skip to the next dataset
+
+        print(f"Found splits: {list(ds.keys())}")
+        for split_name, split_data in ds.items():
             
-    print(f"\nProcessing complete. All masks saved to {args.output_dir}")
+            print(f"\n--- Processing split: '{split_name}' ({len(split_data)} images) ---")
+            
+            # Create output directories based on dataset and split
+            dataset_folder_name = dataset_name.split('/')[-1] # "lolv2-real"
+            low_dir = os.path.join(args.output_dir, dataset_folder_name, split_name, "low")
+            high_dir = os.path.join(args.output_dir, dataset_folder_name, split_name, "high")
+            mask_dir = os.path.join(args.output_dir, dataset_folder_name, split_name, "masks")
+
+            os.makedirs(low_dir, exist_ok=True)
+            os.makedirs(high_dir, exist_ok=True)
+            os.makedirs(mask_dir, exist_ok=True)
+            
+            print(f"Saving LOW images to: {low_dir}")
+            print(f"Saving HIGH images to: {high_dir}")
+            print(f"Saving MASKS to: {mask_dir}")
+
+            # Loop over items (index 'i' is important)
+            for i, item in enumerate(tqdm(split_data, desc=f"Processing {dataset_name} {split_name} split")):
+                try:
+                    # 'item['image']' is now a PIL Image, not a path
+                    input_image = item['image'].convert("RGB") 
+                    label = item['label'] # 0 or 1
+                    
+                    # Create a new filename
+                    output_filename = f"{split_name}_{i:05d}.png"
+
+                    # Save files based on label
+                    if label == 0:
+                        # This is a LOW-LIGHT image
+                        low_path = os.path.join(low_dir, output_filename)
+                        input_image.save(low_path)
+                        
+                        # Run segmentation and save the mask
+                        mask_path = os.path.join(mask_dir, output_filename)
+                        run_automatic_segmentation(model, input_image, mask_path, args)
+                        
+                    elif label == 1:
+                        # This is a HIGH-LIGHT (Ground Truth) image
+                        high_path = os.path.join(high_dir, output_filename)
+                        input_image.save(high_path)
+
+                except Exception as e:
+                    print(f"\nWarning: Failed to process item {i}. Error: {e}")
+                    # Continue to the next image
+    
+    print(f"\nProcessing complete for all datasets. All files saved in {args.output_dir}")
 
 if __name__ == "__main__":
+    # Add parent directory to Python path to find 'fastsam'
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
     args = parse_args()
     main(args)
