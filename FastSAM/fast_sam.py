@@ -116,7 +116,7 @@ def main(args):
     
     dataset_paths = [
         {"name": "lolv2-real", "path": os.path.join(base_data_path, "lolv2-real")},
-        {"name": "lolv2-synthetic", "path": os.path.join(base_data_path, "lolv2-real")}
+        {"name": "lolv2-synthetic", "path": os.path.join(base_data_path, "lolv2-synthetic")}
     ]
     
     print(f"Preparing to process datasets: {[d['name'] for d in dataset_paths]}")
