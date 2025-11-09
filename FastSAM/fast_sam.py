@@ -110,117 +110,132 @@ def main(args):
     print(f"Using device: {args.device}")
 
     # Define the local paths to the top-level dataset folders
-    # Assumes script is at /scratch/user/sam0505/Multimodal-Low-Light/FastSAM/
-    # and data is at /scratch/user/sam0505/
     base_data_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '/scratch/user/sam0505/Multimodal-Low-Light/data'))
     
-    dataset_paths = [
-        {"name": "lolv2-real", "path": os.path.join(base_data_path, "lolv2-real")},
-        {"name": "lolv2-synthetic", "path": os.path.join(base_data_path, "lolv2-synthetic")}
+    # --- MODIFICATION: Point to each SPLIT directory directly ---
+    # Instead of loading 'lolv2-real' and 'lolv2-synthetic' and *hoping*
+    # the library finds the splits, we tell it exactly which splits to load.
+    dataset_splits_to_process = [
+        {
+            "dataset_name": "lolv2-real", 
+            "split_name": "train", 
+            "path": os.path.join(base_data_path, "lolv2-real", "train")
+        },
+        {
+            "dataset_name": "lolv2-real", 
+            "split_name": "test", 
+            "path": os.path.join(base_data_path, "lolv2-real", "test")
+        },
+        {
+            "dataset_name": "lolv2-synthetic", 
+            "split_name": "train", 
+            "path": os.path.join(base_data_path, "lolv2-synthetic", "train")
+        },
+        {
+            "dataset_name": "lolv2-synthetic", 
+            "split_name": "test", 
+            "path": os.path.join(base_data_path, "lolv2-synthetic", "test")
+        }
     ]
     
-    print(f"Preparing to process datasets: {[d['name'] for d in dataset_paths]}")
+    print(f"Preparing to process {len(dataset_splits_to_process)} dataset splits...")
 
-    for dataset_info in dataset_paths:
-        dataset_name = dataset_info["name"]
-        dataset_path = dataset_info["path"] # Use the local path
+    # --- MODIFICATION: Loop over the new list of specific splits ---
+    for split_info in dataset_splits_to_process:
+        dataset_name = split_info["dataset_name"]
+        split_name = split_info["split_name"]
+        split_path = split_info["path"] # This is the path to the e.g., .../train/ folder
         
         print(f"\n=======================================================")
-        print(f"STARTING DATASET: {dataset_name}")
-        print(f"Loading from local path: {dataset_path}")
+        print(f"STARTING DATASET: {dataset_name} (Split: {split_name})")
+        print(f"Loading from local path: {split_path}")
         print("=======================================================")
 
-        print(f"Loading '{dataset_name}' (full dataset)...")
+        print(f"Loading '{dataset_name}/{split_name}'...")
         try:
-            # Load from the local path WITHOUT data_files
-            ds = load_dataset(dataset_path) 
+            # Load the dataset from the *specific split path*
+            # This will correctly interpret 'Input' and 'GT' as labels
+            # load_dataset() will return a dict, e.g., {'train': Dataset(...)}
+            # We want the data, so we access the default 'train' key.
+            split_data = load_dataset(split_path, trust_remote_code=True)["train"] 
+            
         except Exception as e:
-            print(f"Failed to load dataset {dataset_name} from {dataset_path}.")
+            print(f"Failed to load dataset {dataset_name}/{split_name} from {split_path}.")
             print(f"Error: {e}")
+            print("!!! Does this directory exist? Skipping...")
             continue 
 
-        print(f"Found splits: {list(ds.keys())}")
-        for split_name, split_data in ds.items():
+        # --- MODIFICATION: The 'for split_name, split_data in ds.items():' loop is removed ---
+        # We are now *inside* the logic that was in that loop,
+        # because we loaded the split directly.
+        
+        print(f"\n--- Processing split: '{split_name}' ({len(split_data)} images) ---")
+        
+        try:
+            # This logic is now correct, as 'label' will refer to 'Input' and 'GT'
+            label_names = split_data.features['label'].names
+            low_label_index = -1
+            high_label_index = -1
             
-            print(f"\n--- Processing split: '{split_name}' ({len(split_data)} images) ---")
+            # Loop and find *both* labels
+            for i, name in enumerate(label_names):
+                name_lower = name.lower()
+                if 'input' in name_lower or 'low' in name_lower:
+                    low_label_index = i
+                elif 'gt' in name_lower or 'high' in name_lower:
+                    high_label_index = i
             
+            if low_label_index == -1 or high_label_index == -1:
+                raise Exception(f"Could not find 'low'/'high' or 'Input'/'GT' in label names: {label_names}")
+
+            print(f"Auto-detected labels: LOW='{label_names[low_label_index]}' (Index={low_label_index}), HIGH='{label_names[high_label_index]}' (Index={high_label_index})")
+            
+        except Exception as e:
+            print(f"Fatal Error: Could not determine labels. {e}")
+            continue # Skip to next split
+
+        # Create output directories (this logic is unchanged)
+        low_dir = os.path.join(args.output_dir, dataset_name, split_name, "low")
+        high_dir = os.path.join(args.output_dir, dataset_name, split_name, "high")
+        mask_dir = os.path.join(args.output_dir, dataset_name, split_name, "masks")
+
+        os.makedirs(low_dir, exist_ok=True)
+        os.makedirs(high_dir, exist_ok=True)
+        os.makedirs(mask_dir, exist_ok=True)
+        
+        print(f"Saving LOW images to: {low_dir}")
+        print(f"Saving HIGH images to: {high_dir}")
+        print(f"Saving MASKS to: {mask_dir}")
+
+        low_saved_count = 0
+        high_saved_count = 0
+        unmatched_labels_found = set()
+
+        # This loop logic is unchanged
+        for i, item in enumerate(tqdm(split_data, desc=f"Processing {dataset_name} {split_name} split")):
             try:
-                label_names = split_data.features['label'].names
-                low_label_index = -1
-                high_label_index = -1
-                
-                # Loop and find *both* labels
-                for i, name in enumerate(label_names):
-                    name_lower = name.lower()
-                    if 'input' in name_lower or 'low' in name_lower:
-                        low_label_index = i
-                    elif 'gt' in name_lower or 'high' in name_lower:
-                        high_label_index = i
-                
-                if low_label_index == -1 or high_label_index == -1:
-                    raise Exception(f"Could not find 'low'/'high' or 'Input'/'GT' in label names: {label_names}")
+                input_image = item['image'].convert("RGB") 
+                label = item['label'] # This will be 0 or 1
+                output_filename = f"{split_name}_{i:05d}.png"
 
-                print(f"Auto-detected labels: LOW='{label_names[low_label_index]}' (Index={low_label_index}), HIGH='{label_names[high_label_index]}' (Index={high_label_index})")
-                
-            except Exception as e:
-                print(f"Fatal Error: Could not determine labels. {e}")
-                continue # Skip to next split
-
-            # Create output directories
-            low_dir = os.path.join(args.output_dir, dataset_name, split_name, "low")
-            high_dir = os.path.join(args.output_dir, dataset_name, split_name, "high")
-            mask_dir = os.path.join(args.output_dir, dataset_name, split_name, "masks")
-
-            os.makedirs(low_dir, exist_ok=True)
-            os.makedirs(high_dir, exist_ok=True)
-            os.makedirs(mask_dir, exist_ok=True)
-            
-            print(f"Saving LOW images to: {low_dir}")
-            print(f"Saving HIGH images to: {high_dir}")
-            print(f"Saving MASKS to: {mask_dir}")
-
-            low_saved_count = 0
-            high_saved_count = 0
-            unmatched_labels_found = set() # --- DEBUGGING ---
-
-            for i, item in enumerate(tqdm(split_data, desc=f"Processing {dataset_name} {split_name} split")):
-                try:
-                    input_image = item['image'].convert("RGB") 
-                    label = item['label']
-                    output_filename = f"{split_name}_{i:05d}.png"
-
-                    # --- MODIFIED: ADDED AN 'ELSE' BLOCK FOR DEBUGGING ---
-                    if label == low_label_index:
-                        low_path = os.path.join(low_dir, output_filename)
-                        input_image.save(low_path)
-                        low_saved_count += 1
-                        
-                        mask_path = os.path.join(mask_dir, output_filename)
-                        run_automatic_segmentation(model, input_image, mask_path, args)
-                        
-                    elif label == high_label_index:
-                        high_path = os.path.join(high_dir, output_filename)
-                        input_image.save(high_path)
-                        high_saved_count += 1
+                if label == low_label_index:
+                    low_path = os.path.join(low_dir, output_filename)
+                    input_image.save(low_path)
+                    low_saved_count += 1
                     
-                    else:
-                        # --- THIS WILL TELL US WHAT'S WRONG ---
-                        unmatched_labels_found.add(label)
-                    # --- END MODIFICATION ---
+                    mask_path = os.path.join(mask_dir, output_filename)
+                    run_automatic_segmentation(model, input_image, mask_path, args)
+                    
+                elif label == high_label_index:
+                    high_path = os.path.join(high_dir, output_filename)
+                    input_image.save(high_path)
+                    high_saved_count += 1
+                
+                else:
+                    unmatched_labels_found.add(label)
 
-                except Exception as e:
-                    print(f"\nWarning: Failed to process item {i}. Error: {e}")
-            
-            print(f"--- Split '{split_name}' complete ---")
-            print(f"Saved {low_saved_count} LOW images.")
-            print(f"Saved {high_saved_count} HIGH images.")
-            print(f"Generated {low_saved_count} MASKS.")
-            
-            # --- DEBUGGING: PRINT ANY UNMATCHED LABELS ---
-            if unmatched_labels_found:
-                print(f"!!! WARNING: Found {len(unmatched_labels_found)} unmatched labels that were not saved: {unmatched_labels_found}")
-    
-    print(f"\nProcessing complete for all datasets. All files saved in {args.output_dir}")
+            except Exception as e:
+                print(f"\nWarning: Failed to process item {i}")
 
 if __name__ == "__main__":
     # Add parent directory to Python path to find 'fastsam'
