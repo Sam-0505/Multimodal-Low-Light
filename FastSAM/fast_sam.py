@@ -117,24 +117,14 @@ def main(args):
     # the library finds the splits, we tell it exactly which splits to load.
     dataset_splits_to_process = [
         {
-            "dataset_name": "lolv2-real", 
-            "split_name": "train", 
-            "path": os.path.join(base_data_path, "lolv2-real", "Train")
-        },
-        {
-            "dataset_name": "lolv2-real", 
-            "split_name": "test", 
-            "path": os.path.join(base_data_path, "lolv2-real", "Test")
-        },
-        {
             "dataset_name": "lolv2-synthetic", 
             "split_name": "train", 
-            "path": os.path.join(base_data_path, "lolv2-real", "Train")
+            "path": os.path.join(base_data_path, "lolv2-synthetic", "Train")
         },
         {
             "dataset_name": "lolv2-synthetic", 
             "split_name": "test", 
-            "path": os.path.join(base_data_path, "lolv2-real", "Test")
+            "path": os.path.join(base_data_path, "lolv2-synthetic", "Test")
         }
     ]
     
