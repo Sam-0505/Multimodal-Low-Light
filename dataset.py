@@ -20,7 +20,7 @@ class ImageLowSemDataset(torch.utils.data.Dataset):
         for name in os.listdir(self.low_img_dir):
             if name.endswith('.jpg') or name.endswith('.png'):
                 self.low_img_names.append(os.path.join(self.low_img_dir, name))
-                self.sem_names.append(os.path.join(self.sem_dir, f'{os.path.splitext(name)[0]}_semantic.png'))
+                self.sem_names.append(os.path.join(self.sem_dir, f'{os.path.splitext(name)[0]}.png'))
                 self.depth_names.append(os.path.join(self.depth_dir, f'{os.path.splitext(name)[0]}_depth.png'))
 
         self.count = len(self.low_img_names)
@@ -64,7 +64,7 @@ class ImageLowSemDataset_Val(torch.utils.data.Dataset):
         for name in os.listdir(self.low_img_dir):
             if name.endswith('.jpg') or name.endswith('.png'):
                 self.low_img_names.append(os.path.join(self.low_img_dir, name))
-                self.sem_names.append(os.path.join(self.sem_dir, f'{os.path.splitext(name)[0]}_semantic.png'))
+                self.sem_names.append(os.path.join(self.sem_dir, f'{os.path.splitext(name)[0]}.png'))
                 self.depth_names.append(os.path.join(self.depth_dir, f'{os.path.splitext(name)[0]}_depth.png'))
 
         self.count = len(self.low_img_names)
