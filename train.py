@@ -29,17 +29,17 @@ parser.add_argument('--seed', type=int, default=2, help='random seed')
 parser.add_argument('--epochs', type=int, default=1, help='epochs')
 parser.add_argument('--lr', type=float, default=0.0003, help='learning rate')
 parser.add_argument('--stage', type=int, default=3, help='epochs')
-parser.add_argument('--save', type=str, default='exp/LOL-tgrs/', help='location of the data corpus')
-parser.add_argument('--pretrain', type=str, default='weights/pretrained_SCI/difficult.pt', help='pretrained weights directory')
+parser.add_argument('--save', type=str, default='/scratch/user/sam0505/Multimodal-Low-Light/checkpoints', help='location of the data corpus')
+parser.add_argument('--pretrain', type=str, default='None', help='pretrained weights directory')
 parser.add_argument('--arch', type=str, choices=['WithCalNet', 'WithoutCalNet'], required=True, help='with/without Calibrate Net')
 parser.add_argument('--frozen', type=str, default=None, choices=['CalEnl', 'Cal', 'Enl'], help='froze the original weights')
-parser.add_argument('--train_dir', type=str, default='./data/LOL/test15/low', help='training data directory')
-parser.add_argument('--val_dir', type=str, default='./data/LOL/test15/low', help='training data directory')
+parser.add_argument('--train_dir', type=str, default='/scratch/user/sam0505/Multimodal-Low-Light/data/lolv2-real/train/low', help='training data directory')
+parser.add_argument('--val_dir', type=str, default='/scratch/user/sam0505/Multimodal-Low-Light/data/lolv2-real/test/low', help='training data directory')
 parser.add_argument('--comment', type=str, default=None, help='comment')
 args = parser.parse_args()
 
 # 根据命令行参数进行设置
-os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+# os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
 snapshot_dir = args.save + '/' + 'Train-{}'.format(time.strftime("%Y%m%d-%H%M%S"))
 utils.create_exp_dir(snapshot_dir, scripts_to_save=glob.glob('*.py'))
@@ -168,8 +168,8 @@ def main():
     optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), 
                                   lr=args.lr*100, betas=(0.9, 0.999), weight_decay=3e-4)
 
-    TrainDataset = ImageLowSemDataset(img_dir=args.train_dir, sem_dir=os.path.join(os.path.split(args.train_dir)[0], 'low_semantic'), depth_dir=os.path.join(os.path.split(args.train_dir)[0], 'low_depth'))
-    ValDataset = ImageLowSemDataset_Val(img_dir=args.val_dir, sem_dir=os.path.join(os.path.split(args.val_dir)[0], 'low_semantic'), depth_dir=os.path.join(os.path.split(args.val_dir)[0], 'low_depth'))
+    TrainDataset = ImageLowSemDataset(img_dir=args.train_dir, sem_dir=os.path.join(os.path.split(args.train_dir)[0], 'masks'), depth_dir=os.path.join(os.path.split(args.train_dir)[0], 'low_depth'))
+    ValDataset = ImageLowSemDataset_Val(img_dir=args.val_dir, sem_dir=os.path.join(os.path.split(args.val_dir)[0], 'masks'), depth_dir=os.path.join(os.path.split(args.val_dir)[0], 'low_depth'))
     
     train_queue = torch.utils.data.DataLoader(
         TrainDataset, batch_size=args.batch_size, shuffle=True, pin_memory=True
@@ -199,7 +199,8 @@ def main():
 
         logging.info('train: epoch %3d: average_loss %f', epoch, np.average(losses))
         logging.info('----------validation')
-        utils.save(model, os.path.join(model_path, f'weights_{epoch}.pt'))
+        if (epoch + 1) % 10 == 0 or epoch == args.epochs - 1:
+            utils.save(model, os.path.join(model_path, f'weights_{epoch}.pt'))
 
         model.eval()
         image_path_epoch = os.path.join(image_path, f'epoch_{epoch}')
@@ -244,7 +245,7 @@ def main():
             visualize_cam_on_image(in_[0], cam, cam_save_path)
         
         process = subprocess.Popen(
-            ['python', 'evaluate.py', '--test_dir', image_path_epoch, '--test_gt_dir', './data/LOL/test15/high'],
+            ['python', 'evaluate.py', '--test_dir', image_path_epoch, '--test_gt_dir', '/scratch/user/sam0505/Multimodal-Low-Light/data/lolv2-real/test/high'],
             stdout=subprocess.PIPE
         )
         output, error = process.communicate()
