@@ -26,11 +26,11 @@ parser.add_argument('--batch_size', type=int, default=10, help='batch size')
 parser.add_argument('--cuda', type=bool, default=True, help='Use CUDA to train model')
 parser.add_argument('--gpu', type=str, default='0', help='gpu device id')
 parser.add_argument('--seed', type=int, default=2, help='random seed')
-parser.add_argument('--epochs', type=int, default=1, help='epochs')
+parser.add_argument('--epochs', type=int, default=1000, help='epochs')
 parser.add_argument('--lr', type=float, default=0.0003, help='learning rate')
 parser.add_argument('--stage', type=int, default=3, help='epochs')
 parser.add_argument('--save', type=str, default='/scratch/user/sam0505/Multimodal-Low-Light/checkpoints', help='location of the data corpus')
-parser.add_argument('--pretrain', type=str, default='None', help='pretrained weights directory')
+parser.add_argument('--pretrain', type=str, default='weights/pretrained_SCI/difficult.pt', help='pretrained weights directory')
 parser.add_argument('--arch', type=str, choices=['WithCalNet', 'WithoutCalNet'], required=True, help='with/without Calibrate Net')
 parser.add_argument('--frozen', type=str, default=None, choices=['CalEnl', 'Cal', 'Enl'], help='froze the original weights')
 parser.add_argument('--train_dir', type=str, default='/scratch/user/sam0505/Multimodal-Low-Light/data/lolv2-real/train/low', help='training data directory')
@@ -202,57 +202,57 @@ def main():
         if (epoch + 1) % 10 == 0 or epoch == args.epochs - 1:
             utils.save(model, os.path.join(model_path, f'weights_{epoch}.pt'))
 
-        model.eval()
-        image_path_epoch = os.path.join(image_path, f'epoch_{epoch}')
-        os.makedirs(image_path_epoch, exist_ok=True)
-        
-        if args.arch == 'WithCalNet':
-            with torch.no_grad():
-                for batch_idx, (in_, sem_, depth_, imgname_, semname_, depthname_) in enumerate(val_queue):
-                    in_ = in_.cuda()
-                    sem_ = sem_.cuda()
-                    depth_ = depth_.cuda()
-                    image_name = os.path.splitext(imgname_[0])[0]
-                    illu_list, ref_list, input_list, atten = model(in_, sem_, depth_)
-                    u_name = f'{image_name}_{epoch}.png' 
-                    print('validation processing {}'.format(u_name))
-                    u_path = os.path.join(image_path_epoch, u_name)
-                    save_images(ref_list[0], u_path)
-        elif args.arch == 'WithoutCalNet':
-            with torch.no_grad():
-                for batch_idx, (in_, sem_, depth_, imgname_, semname_, depthname_) in enumerate(val_queue):
-                    in_ = in_.cuda()
-                    sem_ = sem_.cuda()
-                    depth_ = depth_.cuda()
-                    image_name = os.path.splitext(imgname_[0])[0]
-                    i, r, d = model(in_, sem_, depth_)
-                    u_name = f'{image_name}.png'
-                    print('validation processing {}'.format(u_name))
-                    u_path = os.path.join(image_path_epoch, u_name)
-                    save_images(r, u_path)
+            model.eval()
+            image_path_epoch = os.path.join(image_path, f'epoch_{epoch}')
+            os.makedirs(image_path_epoch, exist_ok=True)
+            
+            if args.arch == 'WithCalNet':
+                with torch.no_grad():
+                    for batch_idx, (in_, sem_, depth_, imgname_, semname_, depthname_) in enumerate(val_queue):
+                        in_ = in_.cuda()
+                        sem_ = sem_.cuda()
+                        depth_ = depth_.cuda()
+                        image_name = os.path.splitext(imgname_[0])[0]
+                        illu_list, ref_list, input_list, atten = model(in_, sem_, depth_)
+                        u_name = f'{image_name}_{epoch}.png' 
+                        print('validation processing {}'.format(u_name))
+                        u_path = os.path.join(image_path_epoch, u_name)
+                        save_images(ref_list[0], u_path)
+            elif args.arch == 'WithoutCalNet':
+                with torch.no_grad():
+                    for batch_idx, (in_, sem_, depth_, imgname_, semname_, depthname_) in enumerate(val_queue):
+                        in_ = in_.cuda()
+                        sem_ = sem_.cuda()
+                        depth_ = depth_.cuda()
+                        image_name = os.path.splitext(imgname_[0])[0]
+                        i, r, d = model(in_, sem_, depth_)
+                        u_name = f'{image_name}.png'
+                        print('validation processing {}'.format(u_name))
+                        u_path = os.path.join(image_path_epoch, u_name)
+                        save_images(r, u_path)
 
-        # 使用 Grad-CAM 生成并保存可视化
-        cam_save_dir = os.path.join(image_path_epoch, 'grad_cam')
-        os.makedirs(cam_save_dir, exist_ok=True)
-        for batch_idx, (in_, sem_, depth_, imgname_, semname_, depthname_) in enumerate(val_queue):
-            in_ = in_.cuda()
-            sem_ = sem_.cuda()
-            depth_ = depth_.cuda()
+            # 使用 Grad-CAM 生成并保存可视化
+            cam_save_dir = os.path.join(image_path_epoch, 'grad_cam')
+            os.makedirs(cam_save_dir, exist_ok=True)
+            for batch_idx, (in_, sem_, depth_, imgname_, semname_, depthname_) in enumerate(val_queue):
+                in_ = in_.cuda()
+                sem_ = sem_.cuda()
+                depth_ = depth_.cuda()
 
-            target_output = model.enhance(in_, sem_, depth_)  # 获取增强网络的输出
-            cam = grad_cam.generate_cam(in_, sem_, depth_, target_output[0].mean())  # 使用输出均值计算梯度
-            cam_save_path = os.path.join(cam_save_dir, f'{os.path.splitext(imgname_[0])[0]}_grad_cam.png')
-            visualize_cam_on_image(in_[0], cam, cam_save_path)
-        
-        process = subprocess.Popen(
-            ['python', 'evaluate.py', '--test_dir', image_path_epoch, '--test_gt_dir', '/scratch/user/sam0505/Multimodal-Low-Light/data/lolv2-real/test/high'],
-            stdout=subprocess.PIPE
-        )
-        output, error = process.communicate()
-        if output:
-            logging.info(output.decode('utf-8'))
-        if error:
-            logging.error(error.decode('utf-8'))
+                target_output = model.enhance(in_, sem_, depth_)  # 获取增强网络的输出
+                cam = grad_cam.generate_cam(in_, sem_, depth_, target_output[0].mean())  # 使用输出均值计算梯度
+                cam_save_path = os.path.join(cam_save_dir, f'{os.path.splitext(imgname_[0])[0]}_grad_cam.png')
+                visualize_cam_on_image(in_[0], cam, cam_save_path)
+            
+            process = subprocess.Popen(
+                ['python', 'evaluate.py', '--test_dir', image_path_epoch, '--test_gt_dir', '/scratch/user/sam0505/Multimodal-Low-Light/data/lolv2-real/test/high'],
+                stdout=subprocess.PIPE
+            )
+            output, error = process.communicate()
+            if output:
+                logging.info(output.decode('utf-8'))
+            if error:
+                logging.error(error.decode('utf-8'))
 
 if __name__ == '__main__':
     main()
