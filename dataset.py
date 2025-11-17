@@ -17,11 +17,28 @@ class ImageLowSemDataset(torch.utils.data.Dataset):
         self.low_img_names = []
         self.sem_names = []
         self.depth_names = []
+        
+        # --- MODIFIED SECTION START ---
         for name in os.listdir(self.low_img_dir):
-            if name.endswith('.jpg') or name.endswith('.png'):
-                self.low_img_names.append(os.path.join(self.low_img_dir, name))
-                self.sem_names.append(os.path.join(self.sem_dir, f'{os.path.splitext(name)[0]}.png'))
-                self.depth_names.append(os.path.join(self.depth_dir, f'{os.path.splitext(name)[0]}_depth.png'))
+            if not (name.endswith('.jpg') or name.endswith('.png')):
+                continue  # Skip files that aren't images
+
+            # Construct all three potential file paths
+            low_img_path = os.path.join(self.low_img_dir, name)
+            base_name = os.path.splitext(name)[0]
+            sem_path = os.path.join(self.sem_dir, f'{base_name}.png')
+            depth_path = os.path.join(self.depth_dir, f'{base_name}_depth.png')
+
+            # Check if all three files actually exist on disk
+            if os.path.exists(low_img_path) and os.path.exists(sem_path) and os.path.exists(depth_path):
+                # Only add the triplet if all files are present
+                self.low_img_names.append(low_img_path)
+                self.sem_names.append(sem_path)
+                self.depth_names.append(depth_path)
+            # else:
+            #   If any file is missing, we "skip" this triplet,
+            #   and it never gets added to the dataset.
+        # --- MODIFIED SECTION END ---
 
         self.count = len(self.low_img_names)
 
@@ -61,11 +78,29 @@ class ImageLowSemDataset_Val(torch.utils.data.Dataset):
         self.low_img_names = []
         self.sem_names = []
         self.depth_names = []
+
+        # --- MODIFIED SECTION START ---
+        # --- MODIFIED SECTION START ---
         for name in os.listdir(self.low_img_dir):
-            if name.endswith('.jpg') or name.endswith('.png'):
-                self.low_img_names.append(os.path.join(self.low_img_dir, name))
-                self.sem_names.append(os.path.join(self.sem_dir, f'{os.path.splitext(name)[0]}.png'))
-                self.depth_names.append(os.path.join(self.depth_dir, f'{os.path.splitext(name)[0]}_depth.png'))
+            if not (name.endswith('.jpg') or name.endswith('.png')):
+                continue  # Skip files that aren't images
+
+            # Construct all three potential file paths
+            low_img_path = os.path.join(self.low_img_dir, name)
+            base_name = os.path.splitext(name)[0]
+            sem_path = os.path.join(self.sem_dir, f'{base_name}.png')
+            depth_path = os.path.join(self.depth_dir, f'{base_name}_depth.png')
+
+            # Check if all three files actually exist on disk
+            if os.path.exists(low_img_path) and os.path.exists(sem_path) and os.path.exists(depth_path):
+                # Only add the triplet if all files are present
+                self.low_img_names.append(low_img_path)
+                self.sem_names.append(sem_path)
+                self.depth_names.append(depth_path)
+            # else:
+            #   If any file is missing, we "skip" this triplet,
+            #   and it never gets added to the dataset.
+        # --- MODIFIED SECTION END ---
 
         self.count = len(self.low_img_names)
 
