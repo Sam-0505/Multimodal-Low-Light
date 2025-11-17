@@ -21,3 +21,4 @@ venv1/
 test_output/
 FastSAM/assets/
 FastSAM/examples/
+checkpoints

@@ -54,6 +54,55 @@ fh = logging.FileHandler(os.path.join(snapshot_dir, 'log.txt'))
 fh.setFormatter(logging.Formatter(log_format))
 logging.getLogger().addHandler(fh)
 
+import re
+import logging
+
+def parse_psnr(log_output):
+    """
+    Parses the PSNR value from the output log of evaluate.py
+    """
+    
+    # Log the full output for debugging
+    logging.info(f"Parsing evaluate.py output: \n{log_output}")
+
+    # --- UPDATED REGEX ---
+    # Looks for "PSNR:" followed by whitespace, then captures the number.
+    match = re.search(r"PSNR:\s+(\d+\.\d+)", log_output)
+    # ---------------------
+
+    if match:
+        return float(match.group(1))
+    else:
+        logging.warning("Could not parse PSNR from validation output.")
+        return None
+
+def plot_loss(epoch_losses, save_path):
+    """
+    Plots the training loss per epoch and saves it to a file.
+    """
+    plt.figure(figsize=(10, 5))
+    plt.plot(range(1, len(epoch_losses) + 1), epoch_losses, label='Average Training Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('Training Loss Over Time')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(os.path.join(save_path, 'training_loss_plot.png'))
+    plt.close()
+
+def plot_psnr(val_epochs, epoch_psnrs, save_path):
+    """
+    Plots the validation PSNR per epoch and saves it to a file.
+    """
+    plt.figure(figsize=(10, 5))
+    plt.plot(val_epochs, epoch_psnrs, 'o-', label='Average Validation PSNR') # 'o-' creates markers at data points
+    plt.xlabel('Epoch')
+    plt.ylabel('PSNR (dB)')
+    plt.title('Validation PSNR Over Time')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(os.path.join(save_path, 'validation_psnr_plot.png'))
+    plt.close()
 
 def save_images(tensor, path):
     image_numpy = tensor[0].cpu().float().numpy()
@@ -182,6 +231,12 @@ def main():
     # 初始化 Grad-CAM
     grad_cam = GradCAM(model.enhance, model.enhance.out_conv[1])
 
+    # --- LISTS TO STORE METRICS ---
+    epoch_losses = []
+    val_epochs = []
+    epoch_psnrs = []
+    # ------------------------------
+
     for epoch in range(args.epochs):
         model.train()
         losses = []
@@ -197,8 +252,13 @@ def main():
             losses.append(loss.item())
             logging.info('train: epoch %3d: batch %3d: loss %f', epoch, batch_idx, loss)
 
-        logging.info('train: epoch %3d: average_loss %f', epoch, np.average(losses))
-        if (epoch + 1) % 10 == 0 or epoch == args.epochs - 1:
+        # --- LOG AVERAGE LOSS ---
+        avg_loss = np.average(losses)
+        epoch_losses.append(avg_loss)
+        logging.info('train: epoch %3d: average_loss %f', epoch, avg_loss)
+        # ------------------------
+
+        if (epoch + 1) % 1 == 0 or epoch == args.epochs - 1:
             logging.info('----------validation')
             utils.save(model, os.path.join(model_path, f'weights_{epoch}.pt'))
 
@@ -249,10 +309,27 @@ def main():
                 stdout=subprocess.PIPE
             )
             output, error = process.communicate()
+            log_output = ""
+            
             if output:
-                logging.info(output.decode('utf-8'))
+                log_output = output.decode('utf-8')
+                logging.info(log_output)
             if error:
                 logging.error(error.decode('utf-8'))
+            
+            # Parse PSNR and store it
+            psnr = parse_psnr(log_output)
+            if psnr is not None:
+                val_epochs.append(epoch + 1)
+                epoch_psnrs.append(psnr)
+                logging.info(f"--- Parsed Validation PSNR at Epoch {epoch + 1}: {psnr} dB ---")
+            # -----------------------------------
 
+    # --- PLOTTING AT THE END OF TRAINING ---
+    logging.info("Training complete. Generating plots...")
+    plot_loss(epoch_losses, snapshot_dir)
+    plot_psnr(val_epochs, epoch_psnrs, snapshot_dir)
+    logging.info(f"Loss and PSNR plots saved to {snapshot_dir}")
+    # ---------------------------------------
 if __name__ == '__main__':
     main()
