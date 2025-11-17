@@ -198,7 +198,7 @@ def main():
             logging.info('train: epoch %3d: batch %3d: loss %f', epoch, batch_idx, loss)
 
         logging.info('train: epoch %3d: average_loss %f', epoch, np.average(losses))
-        if (epoch + 1) % 5 == 0 or epoch == args.epochs - 1:
+        if (epoch + 1) % 10 == 0 or epoch == args.epochs - 1:
             logging.info('----------validation')
             utils.save(model, os.path.join(model_path, f'weights_{epoch}.pt'))
 
