@@ -245,7 +245,7 @@ def main():
                 visualize_cam_on_image(in_[0], cam, cam_save_path)
             
             process = subprocess.Popen(
-                ['python', 'evaluate.py', '--test_dir', image_path_epoch, '--test_gt_dir', '/scratch/user/sam0505/Multimodal-Low-Light/data/lolv2-real/test/high'],
+                ['python', '/scratch/user/sam0505/Multimodal-Low-Light/evaluate.py', '--test_dir', image_path_epoch, '--test_gt_dir', './data/lolv2-real/train/high'],
                 stdout=subprocess.PIPE
             )
             output, error = process.communicate()
