@@ -213,11 +213,11 @@ def main():
                         sem_ = sem_.cuda()
                         depth_ = depth_.cuda()
                         image_name = os.path.splitext(imgname_[0])[0]
-                        illu_list, ref_list, input_list, atten = model(in_, sem_, depth_)
-                        u_name = f'{image_name}_{epoch}.png' 
+                        i, r, d = model(in_, sem_, depth_)
+                        u_name = f'{image_name}.png'
                         print('validation processing {}'.format(u_name))
                         u_path = os.path.join(image_path_epoch, u_name)
-                        save_images(ref_list[0], u_path)
+                        save_images(r, u_path)
             elif args.arch == 'WithoutCalNet':
                 with torch.no_grad():
                     for batch_idx, (in_, sem_, depth_, imgname_, semname_, depthname_) in enumerate(val_queue):
