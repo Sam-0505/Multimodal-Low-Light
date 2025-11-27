@@ -207,7 +207,7 @@ def main():
     cudnn.benchmark = True
     cudnn.enabled = True
     
-    model = Network_woCalibrate()
+    model = Network_woCalibrate(use_lut=True)
     model_init(model)
     
     model = model.cuda()
