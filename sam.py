@@ -24,7 +24,7 @@ args = parser.parse_args()
 
 
 
-sam_checkpoint = "./segment_anything/sam_vit_h_4b8939.pth"
+sam_checkpoint = "/scratch/user/sam0505/Multimodal-Low-Light/segment_anything/sam_vit_h_4b8939.pth"
 model_type = "vit_h"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)

@@ -258,7 +258,7 @@ def main():
         logging.info('train: epoch %3d: average_loss %f', epoch, avg_loss)
         # ------------------------
 
-        if (epoch + 1) % 1 == 0 or epoch == args.epochs - 1:
+        if (epoch + 1) % 10 == 0 or epoch == args.epochs - 1:
             logging.info('----------validation')
             utils.save(model, os.path.join(model_path, f'weights_{epoch}.pt'))
 
@@ -305,7 +305,7 @@ def main():
                 visualize_cam_on_image(in_[0], cam, cam_save_path)
             
             process = subprocess.Popen(
-                ['python', '/scratch/user/sam0505/Multimodal-Low-Light/evaluate.py', '--test_dir', image_path_epoch, '--test_gt_dir', './data/lolv2-real/train/high'],
+                ['python', '/scratch/user/sam0505/Multimodal-Low-Light/evaluate.py', '--test_dir', image_path_epoch, '--test_gt_dir', '/scratch/user/sam0505/Multimodal-Low-Light/data/lolv2-real/test/high'],
                 stdout=subprocess.PIPE
             )
             output, error = process.communicate()
