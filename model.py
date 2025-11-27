@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from loss import LossFunction
 from fuse_block import TransformerBlock_1
 
