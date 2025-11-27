@@ -99,10 +99,23 @@ class ColorCorrectionModule(nn.Module):
             # 使用色彩校正矩阵的方式
             corrected_input = input @ self.correction_matrix
         elif self.use_lut:
-            # 使用查找表的方式
-            normalized_input = input / 255.0
-            indices = torch.floor(normalized_input * (self.lut.size(0) - 1)).long()
-            corrected_input = F.embedding(indices.unsqueeze(0).unsqueeze(0), self.lut).squeeze()
+            # input assumed to be in [0,1]
+            lut_size = self.lut.size(0)
+
+            # Compute LUT indices per pixel per channel
+            # input: B × 3 × H × W
+            lut_idx = torch.clamp((input * (lut_size - 1)).long(), 0, lut_size - 1)   # <-- HERE
+
+            # Prepare output tensor
+            corrected_input = torch.zeros_like(input)
+
+            # Apply LUT channel-wise
+            for c in range(3):
+                # lut is (L × 3)
+                # lut_idx[:, c, :, :] is (B × H × W)
+                corrected_input[:, c, :, :] = self.lut[lut_idx[:, c, :, :], c]
+
+            return corrected_input
         else:
             # 若没有提供校正方式，默认输出原输入
             corrected_input = input
