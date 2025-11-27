@@ -1,5 +1,9 @@
 import os
 import sys
+
+# Fix OpenMP error on Windows: allow multiple OpenMP runtimes
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
 import time
 import glob
 import numpy as np
@@ -106,8 +110,83 @@ def plot_psnr(val_epochs, epoch_psnrs, save_path):
 
 def save_images(tensor, path):
     image_numpy = tensor[0].cpu().float().numpy()
-    image_numpy = (np.transpose(image_numpy, (1, 2, 0)))
-    im = Image.fromarray(np.clip(image_numpy * 255.0, 0, 255.0).astype('uint8'))
+    
+    # Handle 4D tensors: (B, C, H, W) -> (C, H, W)
+    if len(image_numpy.shape) == 4:
+        image_numpy = image_numpy[0]  # Remove batch dimension
+    
+    # Handle tensor shape: transpose from (C, H, W) to (H, W, C)
+    if len(image_numpy.shape) == 3:
+        # Standard case: channel-first (C, H, W) where C is 1, 3, or 4
+        if image_numpy.shape[0] in [1, 3, 4]:
+            image_numpy = np.transpose(image_numpy, (1, 2, 0))
+        # Edge case: if shape is (1, 1, N) or (1, N, 1) or (N, 1, 1), handle it
+        elif image_numpy.shape[0] == 1 and image_numpy.shape[1] == 1:
+            # (1, 1, N) -> reshape to (1, N) for grayscale
+            image_numpy = image_numpy.reshape(1, image_numpy.shape[2])
+        elif image_numpy.shape[0] == 1 and image_numpy.shape[2] == 1:
+            # (1, N, 1) -> reshape to (1, N)
+            image_numpy = image_numpy.reshape(1, image_numpy.shape[1])
+        elif image_numpy.shape[1] == 1 and image_numpy.shape[2] == 1:
+            # (N, 1, 1) -> reshape to (N, 1)
+            image_numpy = image_numpy.reshape(image_numpy.shape[0], 1)
+    
+    # Squeeze all singleton dimensions iteratively
+    while True:
+        original_shape = image_numpy.shape
+        image_numpy = np.squeeze(image_numpy)
+        if image_numpy.shape == original_shape:
+            break  # No more singleton dimensions to squeeze
+    
+    # Handle grayscale: if we have (H, W, 1), squeeze to (H, W)
+    if len(image_numpy.shape) == 3 and image_numpy.shape[2] == 1:
+        image_numpy = image_numpy.squeeze(2)
+    
+    # Final check: if still 3D with invalid shape for PIL (like (1, 1, 400))
+    if len(image_numpy.shape) == 3:
+        # PIL only accepts (H, W) for grayscale or (H, W, C) where C is 1, 3, or 4
+        if image_numpy.shape[2] not in [1, 3, 4]:
+            # Invalid: shape like (1, 1, 400) -> reshape to (1, 400)
+            if image_numpy.shape[0] == 1 and image_numpy.shape[1] == 1:
+                image_numpy = image_numpy.reshape(1, image_numpy.shape[2])
+            elif image_numpy.shape[0] == 1:
+                image_numpy = image_numpy.squeeze(0)
+            elif image_numpy.shape[1] == 1:
+                image_numpy = image_numpy.squeeze(1)
+    
+    # Ensure we have a valid 2D or 3D array for PIL
+    if len(image_numpy.shape) == 1:
+        # 1D array, reshape to 2D (assume it's a row)
+        image_numpy = image_numpy.reshape(1, -1)
+    elif len(image_numpy.shape) > 3:
+        # More than 3D, flatten extra dimensions
+        while len(image_numpy.shape) > 3:
+            image_numpy = image_numpy.squeeze(0)
+    
+    # Ensure values are in [0, 255] range
+    image_numpy = np.clip(image_numpy * 255.0, 0, 255.0).astype('uint8')
+    
+    # Final validation before PIL: ensure shape is valid
+    # PIL accepts: 2D (H, W) for grayscale, or 3D (H, W, C) where C in [1, 3, 4]
+    if len(image_numpy.shape) == 3:
+        if image_numpy.shape[2] not in [1, 3, 4]:
+            # Invalid channel dimension - reshape to 2D
+            # If shape is (1, 1, 400), reshape to (1, 400)
+            if image_numpy.shape[0] == 1 and image_numpy.shape[1] == 1:
+                image_numpy = image_numpy.reshape(1, image_numpy.shape[2])
+            elif image_numpy.shape[0] == 1:
+                image_numpy = image_numpy.reshape(image_numpy.shape[1], image_numpy.shape[2])
+            elif image_numpy.shape[1] == 1:
+                image_numpy = image_numpy.reshape(image_numpy.shape[0], image_numpy.shape[2])
+            else:
+                # Take first channel slice
+                image_numpy = image_numpy[:, :, 0]
+    
+    # One more safety check: if shape is still (1, 1, N), force reshape
+    if len(image_numpy.shape) == 3 and image_numpy.shape[0] == 1 and image_numpy.shape[1] == 1:
+        image_numpy = image_numpy.reshape(1, image_numpy.shape[2])
+    
+    im = Image.fromarray(image_numpy)
     im.save(path, 'png')
 
 def model_init(model):
@@ -315,7 +394,9 @@ def main():
                 log_output = output.decode('utf-8')
                 logging.info(log_output)
             if error:
-                logging.error(error.decode('utf-8'))
+                error_msg = error.decode('utf-8')
+                logging.error(f"Error from evaluate.py: {error_msg}")
+                # If there's an error, log it but continue training
             
             # Parse PSNR and store it
             psnr = parse_psnr(log_output)
