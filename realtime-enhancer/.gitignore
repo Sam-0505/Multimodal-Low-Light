@@ -1,0 +1,74 @@
+# Byte-compiled / optimized / compiled files
+__pycache__/
+*.pyc
+*.pyd
+*.pyo
+*.egg
+*.egg-info/
+*.so
+
+# Virtual environment
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Editors and IDEs
+.idea/  # PyCharm
+.vscode/ # VS Code
+*.sublime-workspace # Sublime Text
+*.swp # Vim swap files
+*~ # Emacs backup files
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+build/
+dist/
+*.manifest
+*.spec
+
+# Test and coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# Django/Flask (if applicable)
+*.log
+local_settings.py
+db.sqlite3
+instance/ # Flask
+.webassets-cache # Flask
+
+# PyBuilder
+target/
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# PyInstaller
+*.log
+*.out
+*.spec
