@@ -30,67 +30,98 @@ engine = WakeupDarknessEngine(
 # Store active prompts for each session (Session ID -> Prompt String)
 active_prompts = {}
 
+def is_low_light(img_bgr, threshold=60):
+    # Convert to grayscale
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    # Mean brightness
+    brightness = np.mean(gray)
+    return brightness < threshold, brightness
+
+def draw_info(img, fps, is_low, brightness):
+    text1 = f"FPS: {fps:.1f}"
+    text2 = f"Brightness: {brightness:.1f}"
+    text3 = "Enhanced: YES" if is_low else "Enhanced: NO"
+
+    cv2.putText(img, text1, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,0), 2)
+    cv2.putText(img, text2, (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,0), 2)
+    cv2.putText(img, text3, (10, 85), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,0), 2)
+
+    return img
+
+import asyncio
+from aiortc import MediaStreamTrack
+
 class VideoTransformTrack(MediaStreamTrack):
-    """
-    A video stream track that transforms frames from another track.
-    """
     kind = "video"
 
     def __init__(self, track, session_id):
         super().__init__()
         self.track = track
         self.session_id = session_id
-        
-        # --- NEW: Frame Skipping State ---
-        self.frame_count = 0
-        self.last_enhanced_frame = None
-        self.skip_interval = 5  # Enhance every 5th frame
+
+        # Shared states
+        self.latest_raw_frame = None        # newest raw frame (ndarray)
+        self.latest_enhanced_frame = None   # last enhanced output
+        self.enhancing = False              # is model running?
+
+        # Worker loop
+        self.loop = asyncio.get_event_loop()
+        self.loop.create_task(self.enhancement_worker())
+
+    async def enhancement_worker(self):
+        """Background worker that enhances newest frame asynchronously."""
+        while True:
+            await asyncio.sleep(0)  # let event loop breathe
+
+            # No new raw frame available
+            if self.latest_raw_frame is None:
+                await asyncio.sleep(0.005)
+                continue
+
+            # Enhancement already in progress
+            if self.enhancing:
+                await asyncio.sleep(0.001)
+                continue
+
+            # Take latest raw frame and launch enhancement
+            raw_frame = self.latest_raw_frame.copy()
+            self.enhancing = True
+
+            def run_inference():
+                return engine.enhance_image(raw_frame)
+
+            try:
+                enhanced = await asyncio.get_event_loop().run_in_executor(
+                    None, run_inference
+                )
+                self.latest_enhanced_frame = enhanced
+            except Exception as e:
+                print("Enhancement failed:", e)
+
+            self.enhancing = False
 
     async def recv(self):
-        # 1. Get the next frame from the input stream
         frame = await self.track.recv()
-        
-        # Increment counter
-        self.frame_count += 1
-        
-        # 2. DECISION: Enhance or Reuse?
-        if self.frame_count % self.skip_interval == 0:
-            # --- Path A: Run Heavy Inference ---
-            
-            # Get numpy array (OpenCV format)
-            img_bgr = frame.to_ndarray(format="bgr24")
-            
-            # Run the engine (This takes ~100ms)
-            # You can also pass the prompt here if you modify your engine to accept it
-            # prompt = active_prompts.get(self.session_id, "")
-            try:
-                enhanced_img_bgr = engine.enhance_image(img_bgr)
-                
-                # Update the "Cache"
-                self.last_enhanced_frame = enhanced_img_bgr
-            except Exception as e:
-                print(f"Inference failed: {e}")
-                # Fallback to original if model fails
-                self.last_enhanced_frame = img_bgr
-                
-        else:
-            # --- Path B: Skip Inference ---
-            # If we haven't enhanced a frame yet (first 4 frames), use original
-            if self.last_enhanced_frame is None:
-                img_bgr = frame.to_ndarray(format="bgr24")
-                self.last_enhanced_frame = img_bgr
-            
-            # Use the cached enhanced frame
-            enhanced_img_bgr = self.last_enhanced_frame
 
-        # 3. Rebuild the video frame
-        # We must use the timestamps from the *current* incoming frame 'frame'
-        # so the browser plays it in sync, even if the image data is old.
-        new_frame = frame.from_ndarray(enhanced_img_bgr, format="bgr24")
+        # Convert raw input to numpy
+        img_bgr = frame.to_ndarray(format="bgr24")
+
+        # Update "latest raw frame" (drop older ones)
+        self.latest_raw_frame = img_bgr
+
+        # Choose output frame: enhanced or fallback to raw
+        output = (
+            self.latest_enhanced_frame
+            if self.latest_enhanced_frame is not None
+            else img_bgr
+        )
+
+        new_frame = frame.from_ndarray(output, format="bgr24")
         new_frame.pts = frame.pts
         new_frame.time_base = frame.time_base
-        
+
         return new_frame
+
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
