@@ -100,8 +100,8 @@ class ColorCorrectionModule(nn.Module):
             corrected_input = input @ self.correction_matrix
         elif self.use_lut:
             # 使用查找表的方式
-            normalized_input = input / 255.0
-            indices = torch.floor(normalized_input * (self.lut.size(0) - 1)).long()
+            # normalized_input = input / 255.0
+            indices = torch.floor(input * (self.lut.size(0) - 1)).long()
             corrected_input = F.embedding(indices.unsqueeze(0).unsqueeze(0), self.lut).squeeze()
         else:
             # 若没有提供校正方式，默认输出原输入
