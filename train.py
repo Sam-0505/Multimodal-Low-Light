@@ -40,6 +40,7 @@ parser.add_argument('--frozen', type=str, default=None, choices=['CalEnl', 'Cal'
 parser.add_argument('--train_dir', type=str, default='/scratch/user/sam0505/Multimodal-Low-Light/data/lolv2-real/train/low', help='training data directory')
 parser.add_argument('--val_dir', type=str, default='/scratch/user/sam0505/Multimodal-Low-Light/data/lolv2-real/test/low', help='training data directory')
 parser.add_argument('--comment', type=str, default=None, help='comment')
+parser.add_argument('--use_lut', type=lambda x: x.lower() == 'true', default=True, help='Use LUT in Network_woCalibrate (default: True)')
 args = parser.parse_args()
 
 # 根据命令行参数进行设置
@@ -286,7 +287,7 @@ def main():
     cudnn.benchmark = True
     cudnn.enabled = True
     
-    model = Network_woCalibrate(use_lut=True)
+    model = Network_woCalibrate(use_lut=args.use_lut)
     model_init(model)
     
     model = model.cuda()
