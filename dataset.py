@@ -26,7 +26,7 @@ class ImageLowSemDataset(torch.utils.data.Dataset):
             # Construct all three potential file paths
             low_img_path = os.path.join(self.low_img_dir, name)
             base_name = os.path.splitext(name)[0]
-            sem_path = os.path.join(self.sem_dir, f'{base_name}.png')
+            sem_path = os.path.join(self.sem_dir, f'{base_name}_semantic.png')
             depth_path = os.path.join(self.depth_dir, f'{base_name}_depth.png')
 
             # Check if all three files actually exist on disk
@@ -88,7 +88,7 @@ class ImageLowSemDataset_Val(torch.utils.data.Dataset):
             # Construct all three potential file paths
             low_img_path = os.path.join(self.low_img_dir, name)
             base_name = os.path.splitext(name)[0]
-            sem_path = os.path.join(self.sem_dir, f'{base_name}.png')
+            sem_path = os.path.join(self.sem_dir, f'{base_name}_semantic.png')
             depth_path = os.path.join(self.depth_dir, f'{base_name}_depth.png')
 
             # Check if all three files actually exist on disk

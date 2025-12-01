@@ -297,8 +297,8 @@ def main():
     optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), 
                                   lr=args.lr*100, betas=(0.9, 0.999), weight_decay=3e-4)
 
-    TrainDataset = ImageLowSemDataset(img_dir=args.train_dir, sem_dir=os.path.join(os.path.split(args.train_dir)[0], 'masks'), depth_dir=os.path.join(os.path.split(args.train_dir)[0], 'low_depth'))
-    ValDataset = ImageLowSemDataset_Val(img_dir=args.val_dir, sem_dir=os.path.join(os.path.split(args.val_dir)[0], 'masks'), depth_dir=os.path.join(os.path.split(args.val_dir)[0], 'low_depth'))
+    TrainDataset = ImageLowSemDataset(img_dir=args.train_dir, sem_dir=os.path.join(os.path.split(args.train_dir)[0], 'low_semantic'), depth_dir=os.path.join(os.path.split(args.train_dir)[0], 'low_depth'))
+    ValDataset = ImageLowSemDataset_Val(img_dir=args.val_dir, sem_dir=os.path.join(os.path.split(args.val_dir)[0], 'low_semantic'), depth_dir=os.path.join(os.path.split(args.val_dir)[0], 'low_depth'))
     
     train_queue = torch.utils.data.DataLoader(
         TrainDataset, batch_size=args.batch_size, shuffle=True, pin_memory=True
