@@ -15,16 +15,17 @@
             margin-bottom: 30px;
         }
         .video-container { 
-            display: flex; 
-            justify-content: center; 
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 15px; 
             margin-top: 20px;
-            flex-wrap: wrap;
+            max-width: 1400px;
+            margin-left: auto;
+            margin-right: auto;
         }
         .video-box {
-            flex: 1;
-            min-width: 300px;
-            max-width: 400px;
+            display: flex;
+            flex-direction: column;
         }
         .video-box h3 {
             margin: 0 0 10px 0;
@@ -44,6 +45,12 @@
             background: #222; 
             display: inline-block; 
             border-radius: 12px; 
+        }
+        .toggle-section {
+            margin-bottom: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
         }
         button { 
             padding: 12px 24px; 
@@ -73,12 +80,14 @@
             font-size: 14px;
             cursor: pointer;
             user-select: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
         .controls input[type="checkbox"] {
             cursor: pointer;
-            margin-right: 5px;
-            width: 16px;
-            height: 16px;
+            width: 18px;
+            height: 18px;
         }
         .info {
             margin-top: 20px;
@@ -88,6 +97,7 @@
             display: inline-block;
             font-size: 14px;
             color: #aaa;
+            max-width: 800px;
         }
     </style>
 </head>
@@ -96,12 +106,18 @@
     <h1>🔦 Low-Light Enhancement Model Comparison</h1>
 
     <div class="controls">
-        <div style="margin-bottom: 15px;">
-            <label style="margin-right: 20px;">
-                <input type="checkbox" id="enableWakeup" checked> Enable WakeupDarkness Model
+        <div class="toggle-section">
+            <label>
+                <input type="checkbox" id="enableWakeup" checked> 
+                <span>⚡ WakeupDarkness Model</span>
             </label>
             <label>
-                <input type="checkbox" id="enableNetwork" checked> Enable Network+SAM+Depth Model
+                <input type="checkbox" id="enableNetwork" checked> 
+                <span>🧠 Network + SAM + Depth Model</span>
+            </label>
+            <label>
+                <input type="checkbox" id="enableSCI" checked> 
+                <span>🔬 SCI Model</span>
             </label>
         </div>
         <button onclick="start()" id="startBtn">Start Camera & Compare Models</button>
@@ -114,23 +130,28 @@
             <video id="localVideo" autoplay playsinline muted></video>
         </div>
         <div class="video-box">
-            <h3>⚡ WakeupDarkness Model</h3>
+            <h3>⚡ WakeupDarkness</h3>
             <video id="remoteVideo1" autoplay playsinline></video>
         </div>
         <div class="video-box">
-            <h3>🧠 Network + SAM + Depth</h3>
+            <h3>🧠 Network+SAM+Depth</h3>
             <video id="remoteVideo2" autoplay playsinline></video>
+        </div>
+        <div class="video-box">
+            <h3>🔬 SCI Model</h3>
+            <video id="remoteVideo3" autoplay playsinline></video>
         </div>
     </div>
 
     <div class="info">
-        <p><strong>Info:</strong> Toggle models on/off to compare performance. Both models only enhance when brightness is below threshold (60).</p>
-        <p>Lower FPS during enhancement is expected due to model inference time. Disable a model to reduce GPU load.</p>
+        <p><strong>Info:</strong> Toggle models on/off to compare performance. All models only enhance when brightness is below threshold (60).</p>
+        <p>Lower FPS during enhancement is expected due to model inference time. Disable models to reduce GPU load and improve individual performance.</p>
     </div>
 
     <script>
         let pc1 = null;  // For WakeupDarkness model
         let pc2 = null;  // For Network+SAM+Depth model
+        let pc3 = null;  // For SCI model
         let localStream = null;
         const sessionId = Math.random().toString(36).substring(7);
 
@@ -141,8 +162,9 @@
             // Check which models are enabled
             const enableWakeup = document.getElementById('enableWakeup').checked;
             const enableNetwork = document.getElementById('enableNetwork').checked;
+            const enableSCI = document.getElementById('enableSCI').checked;
 
-            if (!enableWakeup && !enableNetwork) {
+            if (!enableWakeup && !enableNetwork && !enableSCI) {
                 alert('Please enable at least one model!');
                 document.getElementById('startBtn').disabled = false;
                 document.getElementById('stopBtn').disabled = true;
@@ -169,10 +191,19 @@
                 // 3. Create connection for Network model (if enabled)
                 if (enableNetwork) {
                     await createConnection('network', 'remoteVideo2');
-                    console.log('Network model enabled');
+                    console.log('Network+SAM+Depth model enabled');
                 } else {
                     document.getElementById('remoteVideo2').srcObject = null;
                     console.log('Network model disabled');
+                }
+
+                // 4. Create connection for SCI model (if enabled)
+                if (enableSCI) {
+                    await createConnection('sci', 'remoteVideo3');
+                    console.log('SCI model enabled');
+                } else {
+                    document.getElementById('remoteVideo3').srcObject = null;
+                    console.log('SCI model disabled');
                 }
 
                 console.log('Connections established');
@@ -226,8 +257,10 @@
             // Store connection reference
             if (modelType === 'wakeup') {
                 pc1 = pc;
-            } else {
+            } else if (modelType === 'network') {
                 pc2 = pc;
+            } else if (modelType === 'sci') {
+                pc3 = pc;
             }
         }
 
@@ -241,6 +274,10 @@
                 pc2.close();
                 pc2 = null;
             }
+            if (pc3) {
+                pc3.close();
+                pc3 = null;
+            }
 
             // Stop local stream
             if (localStream) {
@@ -252,6 +289,7 @@
             document.getElementById('localVideo').srcObject = null;
             document.getElementById('remoteVideo1').srcObject = null;
             document.getElementById('remoteVideo2').srcObject = null;
+            document.getElementById('remoteVideo3').srcObject = null;
 
             // Update button states
             document.getElementById('startBtn').disabled = false;

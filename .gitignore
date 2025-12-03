@@ -22,3 +22,7 @@ test_output/
 FastSAM/assets/
 FastSAM/examples/
 checkpoints
+SCI-main/SCI-main/TPAMI
+SCI-main/SCI-main/CVPR/Figs
+SCI-main/SCI-main/CVPR/data
+SCI-main/SCI-main/CVPR/results

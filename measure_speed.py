@@ -26,7 +26,7 @@ from torchvision.transforms.functional import to_tensor
 # --- Argument Parsing ---
 parser = argparse.ArgumentParser("Enlighten-Anything End-to-End Speed Test")
 parser.add_argument('--test_dir', type=str, default='./data/lolv2-real/train/low', help='Directory of raw test images')
-parser.add_argument('--enhance_weights', type=str, default="weights/final/weights_999.pt", help='Path to your EnhanceNetwork weights')
+parser.add_argument('--enhance_weights', type=str, default=".\checkpoints\Train-20251117-131243\model_epochs\weights_0.pt", help='Path to your EnhanceNetwork weights')
 parser.add_argument('--fastsam_weights', type=str, default="weights/FastSAM-s.pt", help='Path to your FastSAM model weights')
 parser.add_argument('--depth_model_name', type=str, default="depth-anything/Depth-Anything-V2-Small-hf", help='HuggingFace name of the depth model')
 parser.add_argument('--gpu', type=int, default=0, help='GPU device ID')
@@ -139,10 +139,6 @@ def process_depth_input(depth_pipe, image_pil, device):
     
     return depth_tensor
 
-def tensor_to_pil(t):
-    t = t.squeeze(0).detach().cpu().clamp(0, 1)
-    return Image.fromarray((t.permute(1, 2, 0).numpy() * 255).astype('uint8'))
-
 def main():
     if not torch.cuda.is_available():
         print('No GPU device available')
@@ -168,9 +164,6 @@ def main():
         sys.exit(1)
         
     print(f"\nFound {len(image_list)} images for testing in {args.test_dir}")
-
-    output_dir = "./results_enhanced"
-    os.makedirs(output_dir, exist_ok=True)
     
     # --- 3. GPU Warm-up ---
     print("Running GPU warm-up...")
@@ -215,9 +208,6 @@ def main():
             # This is the full pipeline from your test.py
             i, r, d = enhance_model(in_tensor, sem_tensor, depth_tensor)
             
-            out_pil = tensor_to_pil(r)
-            save_path = os.path.join(output_dir, img_name.replace(".jpg", "_enh.jpg").replace(".png", "_enh.png"))
-            out_pil.save(save_path)
             # --- Stop Timer ---
             ender.record()
             

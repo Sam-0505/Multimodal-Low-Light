@@ -17,15 +17,28 @@ import uuid
 from collections import deque
 from PIL import Image
 from torchvision.transforms.functional import to_tensor
+from torch.autograd import Variable
 
 # Add parent directory: Multimodal-Low-Light
 PARENT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(PARENT_DIR)
 
+# Add SCI model path
+SCI_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "SCI-main", "SCI-main"))
+sys.path.append(SCI_DIR)
+
 from inference import WakeupDarknessEngine
 from model import Network_woCalibrate
 from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
 from transformers import pipeline
+
+# Import SCI model
+try:
+    from CVPR.model import Finetunemodel
+    SCI_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Could not import SCI model: {e}")
+    SCI_AVAILABLE = False
 
 # Initialize WakeupDarkness Engine
 engine = WakeupDarknessEngine(
@@ -47,7 +60,7 @@ enhance_model.to(device)
 enhance_model.eval()
 
 # Load SAM
-sam = sam_model_registry["vit_h"](checkpoint="../segment_anything/sam_vit_h_4b8939.pth")
+sam = sam_model_registry["vit_h"](checkpoint=r"..\segment_anything\sam_vit_h_4b8939.pth")
 sam.to(device=device)
 sam.eval()
 mask_generator = SamAutomaticMaskGenerator(sam)
@@ -55,12 +68,22 @@ mask_generator = SamAutomaticMaskGenerator(sam)
 # Load Depth-Anything
 depth_pipe = pipeline(task="depth-estimation", model="LiheYoung/depth-anything-large-hf", device=device)
 
-print("All models loaded successfully!")
+# Load SCI Model
+if SCI_AVAILABLE:
+    sci_model = Finetunemodel(os.path.join(SCI_DIR, "CVPR","weights", "difficult.pt"))
+    sci_model = sci_model.cuda()
+    sci_model.eval()
+    print("SCI model loaded successfully!")
+else:
+    sci_model = None
+    print("SCI model not available")
+
+print("All available models loaded successfully!")
 
 # Store active prompts for each session (Session ID -> Prompt String)
 active_prompts = {}
 
-def is_low_light(img_bgr, threshold=60):
+def is_low_light(img_bgr, threshold=100):
     """Check if image is low-light based on average brightness."""
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     brightness = np.mean(gray)
@@ -122,6 +145,7 @@ class VideoTransformTrack(MediaStreamTrack):
         self.latest_raw_frame = None
         self.latest_enhanced_frame = None
         self.enhancing = False
+        self.frame_hash = None  # Track if frame has changed
         
         # FPS tracking for output frames
         self.output_frame_times = deque(maxlen=30)
@@ -148,6 +172,10 @@ class VideoTransformTrack(MediaStreamTrack):
 
         # Update "latest raw frame"
         self.latest_raw_frame = img_bgr
+        
+        # Always update brightness from current frame
+        _, brightness = is_low_light(img_bgr)
+        self.current_brightness = brightness
 
         # Choose output frame
         if self.latest_enhanced_frame is not None and self.is_currently_enhanced:
@@ -184,7 +212,7 @@ class WakeupDarknessTrack(VideoTransformTrack):
     async def enhancement_worker(self):
         """Background worker for WakeupDarknessEngine."""
         while True:
-            await asyncio.sleep(0)
+            await asyncio.sleep(0.01)  # Reduced frequency
 
             if self.latest_raw_frame is None:
                 await asyncio.sleep(0.005)
@@ -194,11 +222,18 @@ class WakeupDarknessTrack(VideoTransformTrack):
                 await asyncio.sleep(0.001)
                 continue
 
+            # Check if we have a new frame
+            current_hash = hash(self.latest_raw_frame.tobytes())
+            if current_hash == self.frame_hash:
+                # Same frame, skip processing
+                await asyncio.sleep(0.05)
+                continue
+            
+            self.frame_hash = current_hash
             raw_frame = self.latest_raw_frame.copy()
             
             # Check if enhancement is needed
             is_low, brightness = is_low_light(raw_frame)
-            self.current_brightness = brightness
             
             if not is_low:
                 self.latest_enhanced_frame = None
@@ -229,6 +264,8 @@ class WakeupDarknessTrack(VideoTransformTrack):
                         
             except Exception as e:
                 print("WakeupDarkness enhancement failed:", e)
+                import traceback
+                traceback.print_exc()
                 self.is_currently_enhanced = False
 
             self.enhancing = False
@@ -243,7 +280,7 @@ class NetworkWoCalibrateTrack(VideoTransformTrack):
     async def enhancement_worker(self):
         """Background worker for Network_woCalibrate."""
         while True:
-            await asyncio.sleep(0)
+            await asyncio.sleep(0.01)  # Reduced frequency
 
             if self.latest_raw_frame is None:
                 await asyncio.sleep(0.005)
@@ -253,11 +290,18 @@ class NetworkWoCalibrateTrack(VideoTransformTrack):
                 await asyncio.sleep(0.001)
                 continue
 
+            # Check if we have a new frame
+            current_hash = hash(self.latest_raw_frame.tobytes())
+            if current_hash == self.frame_hash:
+                # Same frame, skip processing
+                await asyncio.sleep(0.05)
+                continue
+            
+            self.frame_hash = current_hash
             raw_frame = self.latest_raw_frame.copy()
             
             # Check if enhancement is needed
             is_low, brightness = is_low_light(raw_frame)
-            self.current_brightness = brightness
             
             if not is_low:
                 self.latest_enhanced_frame = None
@@ -306,6 +350,97 @@ class NetworkWoCalibrateTrack(VideoTransformTrack):
                         
             except Exception as e:
                 print("Network_woCalibrate enhancement failed:", e)
+                import traceback
+                traceback.print_exc()
+                self.is_currently_enhanced = False
+
+            self.enhancing = False
+
+
+class SCITrack(VideoTransformTrack):
+    """Video track using SCI model."""
+    
+    def __init__(self, track, session_id):
+        super().__init__(track, session_id, "SCI Model")
+
+    async def enhancement_worker(self):
+        """Background worker for SCI model."""
+        if not SCI_AVAILABLE or sci_model is None:
+            print("SCI model not available")
+            return
+            
+        while True:
+            await asyncio.sleep(0.01)  # Reduced frequency
+
+            if self.latest_raw_frame is None:
+                await asyncio.sleep(0.005)
+                continue
+
+            if self.enhancing:
+                await asyncio.sleep(0.001)
+                continue
+
+            # Check if we have a new frame
+            current_hash = hash(self.latest_raw_frame.tobytes())
+            if current_hash == self.frame_hash:
+                # Same frame, skip processing
+                await asyncio.sleep(0.05)
+                continue
+            
+            self.frame_hash = current_hash
+            raw_frame = self.latest_raw_frame.copy()
+            
+            # Check if enhancement is needed
+            is_low, brightness = is_low_light(raw_frame)
+            
+            if not is_low:
+                self.latest_enhanced_frame = None
+                self.is_currently_enhanced = False
+                await asyncio.sleep(0.01)
+                continue
+            
+            self.enhancing = True
+
+            def run_inference():
+                # Convert BGR to RGB PIL Image
+                image_rgb = cv2.cvtColor(raw_frame, cv2.COLOR_BGR2RGB)
+                image_pil = Image.fromarray(image_rgb)
+                
+                # Convert to tensor and normalize
+                with torch.no_grad():
+                    # SCI expects input in [0, 1] range
+                    input_tensor = to_tensor(image_pil).unsqueeze(0).cuda()
+                    
+                    # Run SCI model
+                    i, r = sci_model(input_tensor)
+                    
+                    # Convert output tensor to numpy BGR
+                    output_np = r.squeeze(0).cpu().numpy().transpose(1, 2, 0)
+                    output_np = np.clip(output_np * 255, 0, 255).astype(np.uint8)
+                    output_bgr = cv2.cvtColor(output_np, cv2.COLOR_RGB2BGR)
+                    
+                return output_bgr
+
+            try:
+                enhanced = await asyncio.get_event_loop().run_in_executor(
+                    None, run_inference
+                )
+                self.latest_enhanced_frame = enhanced
+                self.is_currently_enhanced = True
+                
+                # Track FPS
+                current_time = time.time()
+                self.output_frame_times.append(current_time)
+                
+                if len(self.output_frame_times) > 1:
+                    time_diff = self.output_frame_times[-1] - self.output_frame_times[0]
+                    if time_diff > 0:
+                        self.avg_fps = (len(self.output_frame_times) - 1) / time_diff
+                        
+            except Exception as e:
+                print("SCI enhancement failed:", e)
+                import traceback
+                traceback.print_exc()
                 self.is_currently_enhanced = False
 
             self.enhancing = False
@@ -322,7 +457,7 @@ async def offer(request: Request):
     params = await request.json()
     offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
     session_id = params.get("session_id")
-    model_type = params.get("model_type", "wakeup")  # "wakeup" or "network"
+    model_type = params.get("model_type", "wakeup")  # "wakeup", "network", or "sci"
 
     pc = RTCPeerConnection()
     pcs.add(pc)
@@ -342,8 +477,13 @@ async def offer(request: Request):
             # Choose which model track to use
             if model_type == "wakeup":
                 local_video = WakeupDarknessTrack(track, session_id)
-            else:
+            elif model_type == "network":
                 local_video = NetworkWoCalibrateTrack(track, session_id)
+            elif model_type == "sci":
+                local_video = SCITrack(track, session_id)
+            else:
+                print(f"Unknown model type: {model_type}")
+                return
             
             pc.addTrack(local_video)
 
