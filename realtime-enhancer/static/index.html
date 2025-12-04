@@ -89,6 +89,10 @@
             width: 18px;
             height: 18px;
         }
+        .controls input[type="range"] {
+            cursor: pointer;
+            accent-color: #007bff;
+        }
         .info {
             margin-top: 20px;
             padding: 15px;
@@ -108,16 +112,24 @@
     <div class="controls">
         <div class="toggle-section">
             <label>
-                <input type="checkbox" id="enableWakeup" checked> 
-                <span>⚡ WakeupDarkness Model</span>
+                <input type="checkbox" id="enableSCI" checked> 
+                <span>🔬 SCI Model</span>
             </label>
             <label>
                 <input type="checkbox" id="enableNetwork" checked> 
                 <span>🧠 Network + SAM + Depth Model</span>
             </label>
             <label>
-                <input type="checkbox" id="enableSCI" checked> 
-                <span>🔬 SCI Model</span>
+                <input type="checkbox" id="enableWakeup" checked> 
+                <span>⚡ WakeupDarkness Model</span>
+            </label>
+        </div>
+        <div style="margin: 15px 0;">
+            <label style="justify-content: center;">
+                <span style="margin-right: 10px;">Brightness Threshold:</span>
+                <input type="range" id="thresholdSlider" min="20" max="200" value="100" 
+                       style="width: 200px; vertical-align: middle;">
+                <span id="thresholdValue" style="margin-left: 10px; font-weight: bold;">100</span>
             </label>
         </div>
         <button onclick="start()" id="startBtn">Start Camera & Compare Models</button>
@@ -130,7 +142,7 @@
             <video id="localVideo" autoplay playsinline muted></video>
         </div>
         <div class="video-box">
-            <h3>⚡ WakeupDarkness</h3>
+            <h3>🔬 SCI Model</h3>
             <video id="remoteVideo1" autoplay playsinline></video>
         </div>
         <div class="video-box">
@@ -138,7 +150,7 @@
             <video id="remoteVideo2" autoplay playsinline></video>
         </div>
         <div class="video-box">
-            <h3>🔬 SCI Model</h3>
+            <h3>⚡ WakeupDarkness</h3>
             <video id="remoteVideo3" autoplay playsinline></video>
         </div>
     </div>
@@ -149,22 +161,28 @@
     </div>
 
     <script>
-        let pc1 = null;  // For WakeupDarkness model
+        let pc1 = null;  // For SCI model
         let pc2 = null;  // For Network+SAM+Depth model
-        let pc3 = null;  // For SCI model
+        let pc3 = null;  // For WakeupDarkness model
         let localStream = null;
         const sessionId = Math.random().toString(36).substring(7);
+
+        // Update threshold display
+        document.getElementById('thresholdSlider').addEventListener('input', function(e) {
+            document.getElementById('thresholdValue').textContent = e.target.value;
+        });
 
         async function start() {
             document.getElementById('startBtn').disabled = true;
             document.getElementById('stopBtn').disabled = false;
 
             // Check which models are enabled
-            const enableWakeup = document.getElementById('enableWakeup').checked;
-            const enableNetwork = document.getElementById('enableNetwork').checked;
             const enableSCI = document.getElementById('enableSCI').checked;
+            const enableNetwork = document.getElementById('enableNetwork').checked;
+            const enableWakeup = document.getElementById('enableWakeup').checked;
+            const threshold = document.getElementById('thresholdSlider').value;
 
-            if (!enableWakeup && !enableNetwork && !enableSCI) {
+            if (!enableSCI && !enableNetwork && !enableWakeup) {
                 alert('Please enable at least one model!');
                 document.getElementById('startBtn').disabled = false;
                 document.getElementById('stopBtn').disabled = true;
@@ -179,31 +197,31 @@
                 });
                 document.getElementById('localVideo').srcObject = localStream;
 
-                // 2. Create connection for WakeupDarkness model (if enabled)
-                if (enableWakeup) {
-                    await createConnection('wakeup', 'remoteVideo1');
-                    console.log('WakeupDarkness model enabled');
+                // 2. Create connection for SCI model (if enabled)
+                if (enableSCI) {
+                    await createConnection('sci', 'remoteVideo1', threshold);
+                    console.log('SCI model enabled');
                 } else {
                     document.getElementById('remoteVideo1').srcObject = null;
-                    console.log('WakeupDarkness model disabled');
+                    console.log('SCI model disabled');
                 }
 
                 // 3. Create connection for Network model (if enabled)
                 if (enableNetwork) {
-                    await createConnection('network', 'remoteVideo2');
+                    await createConnection('network', 'remoteVideo2', threshold);
                     console.log('Network+SAM+Depth model enabled');
                 } else {
                     document.getElementById('remoteVideo2').srcObject = null;
                     console.log('Network model disabled');
                 }
 
-                // 4. Create connection for SCI model (if enabled)
-                if (enableSCI) {
-                    await createConnection('sci', 'remoteVideo3');
-                    console.log('SCI model enabled');
+                // 4. Create connection for WakeupDarkness model (if enabled)
+                if (enableWakeup) {
+                    await createConnection('wakeup', 'remoteVideo3', threshold);
+                    console.log('WakeupDarkness model enabled');
                 } else {
                     document.getElementById('remoteVideo3').srcObject = null;
-                    console.log('SCI model disabled');
+                    console.log('WakeupDarkness model disabled');
                 }
 
                 console.log('Connections established');
@@ -214,7 +232,7 @@
             }
         }
 
-        async function createConnection(modelType, videoElementId) {
+        async function createConnection(modelType, videoElementId, threshold) {
             const pc = new RTCPeerConnection();
 
             // Add local tracks to Peer Connection
@@ -247,7 +265,8 @@
                     sdp: pc.localDescription.sdp,
                     type: pc.localDescription.type,
                     session_id: sessionId,
-                    model_type: modelType
+                    model_type: modelType,
+                    threshold: parseInt(threshold)
                 })
             });
 
@@ -255,11 +274,11 @@
             await pc.setRemoteDescription(answer);
 
             // Store connection reference
-            if (modelType === 'wakeup') {
+            if (modelType === 'sci') {
                 pc1 = pc;
             } else if (modelType === 'network') {
                 pc2 = pc;
-            } else if (modelType === 'sci') {
+            } else if (modelType === 'wakeup') {
                 pc3 = pc;
             }
         }

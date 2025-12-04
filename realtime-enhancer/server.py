@@ -70,7 +70,7 @@ depth_pipe = pipeline(task="depth-estimation", model="LiheYoung/depth-anything-l
 
 # Load SCI Model
 if SCI_AVAILABLE:
-    sci_model = Finetunemodel(os.path.join(SCI_DIR, "CVPR","weights", "difficult.pt"))
+    sci_model = Finetunemodel(os.path.join(SCI_DIR, "CVPR", "weights", "difficult.pt"))
     sci_model = sci_model.cuda()
     sci_model.eval()
     print("SCI model loaded successfully!")
@@ -83,7 +83,7 @@ print("All available models loaded successfully!")
 # Store active prompts for each session (Session ID -> Prompt String)
 active_prompts = {}
 
-def is_low_light(img_bgr, threshold=100):
+def is_low_light(img_bgr, threshold=60):
     """Check if image is low-light based on average brightness."""
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     brightness = np.mean(gray)
@@ -135,11 +135,12 @@ class VideoTransformTrack(MediaStreamTrack):
     """Base class for video transformation with FPS tracking."""
     kind = "video"
 
-    def __init__(self, track, session_id, model_name):
+    def __init__(self, track, session_id, model_name, threshold=100):
         super().__init__()
         self.track = track
         self.session_id = session_id
         self.model_name = model_name
+        self.threshold = threshold
 
         # Shared states
         self.latest_raw_frame = None
@@ -174,14 +175,15 @@ class VideoTransformTrack(MediaStreamTrack):
         self.latest_raw_frame = img_bgr
         
         # Always update brightness from current frame
-        _, brightness = is_low_light(img_bgr)
+        _, brightness = is_low_light(img_bgr, self.threshold)
         self.current_brightness = brightness
 
         # Choose output frame
         if self.latest_enhanced_frame is not None and self.is_currently_enhanced:
             output = self.latest_enhanced_frame.copy()
         else:
-            output = img_bgr.copy()
+            # Use original frame without copying to preserve quality
+            output = img_bgr
             
             # For non-enhanced frames, track FPS of raw passthrough
             current_time = time.time()
@@ -192,11 +194,12 @@ class VideoTransformTrack(MediaStreamTrack):
                 if time_diff > 0:
                     self.avg_fps = (len(self.output_frame_times) - 1) / time_diff
         
-        # Draw info on the frame
-        output = draw_info(output, self.avg_fps, self.is_currently_enhanced, 
+        # Draw info on the frame (make a copy first to avoid modifying original)
+        output_with_info = output.copy()
+        output_with_info = draw_info(output_with_info, self.avg_fps, self.is_currently_enhanced, 
                           self.current_brightness, self.model_name)
 
-        new_frame = frame.from_ndarray(output, format="bgr24")
+        new_frame = frame.from_ndarray(output_with_info, format="bgr24")
         new_frame.pts = frame.pts
         new_frame.time_base = frame.time_base
 
@@ -206,8 +209,8 @@ class VideoTransformTrack(MediaStreamTrack):
 class WakeupDarknessTrack(VideoTransformTrack):
     """Video track using WakeupDarknessEngine."""
     
-    def __init__(self, track, session_id):
-        super().__init__(track, session_id, "WakeupDarkness")
+    def __init__(self, track, session_id, threshold=100):
+        super().__init__(track, session_id, "WakeupDarkness", threshold)
 
     async def enhancement_worker(self):
         """Background worker for WakeupDarknessEngine."""
@@ -233,7 +236,7 @@ class WakeupDarknessTrack(VideoTransformTrack):
             raw_frame = self.latest_raw_frame.copy()
             
             # Check if enhancement is needed
-            is_low, brightness = is_low_light(raw_frame)
+            is_low, brightness = is_low_light(raw_frame, self.threshold)
             
             if not is_low:
                 self.latest_enhanced_frame = None
@@ -274,8 +277,8 @@ class WakeupDarknessTrack(VideoTransformTrack):
 class NetworkWoCalibrateTrack(VideoTransformTrack):
     """Video track using Network_woCalibrate with SAM and Depth."""
     
-    def __init__(self, track, session_id):
-        super().__init__(track, session_id, "Network+SAM+Depth")
+    def __init__(self, track, session_id, threshold=100):
+        super().__init__(track, session_id, "Network+SAM+Depth", threshold)
 
     async def enhancement_worker(self):
         """Background worker for Network_woCalibrate."""
@@ -301,7 +304,7 @@ class NetworkWoCalibrateTrack(VideoTransformTrack):
             raw_frame = self.latest_raw_frame.copy()
             
             # Check if enhancement is needed
-            is_low, brightness = is_low_light(raw_frame)
+            is_low, brightness = is_low_light(raw_frame, self.threshold)
             
             if not is_low:
                 self.latest_enhanced_frame = None
@@ -360,8 +363,8 @@ class NetworkWoCalibrateTrack(VideoTransformTrack):
 class SCITrack(VideoTransformTrack):
     """Video track using SCI model."""
     
-    def __init__(self, track, session_id):
-        super().__init__(track, session_id, "SCI Model")
+    def __init__(self, track, session_id, threshold=100):
+        super().__init__(track, session_id, "SCI Model", threshold)
 
     async def enhancement_worker(self):
         """Background worker for SCI model."""
@@ -391,7 +394,7 @@ class SCITrack(VideoTransformTrack):
             raw_frame = self.latest_raw_frame.copy()
             
             # Check if enhancement is needed
-            is_low, brightness = is_low_light(raw_frame)
+            is_low, brightness = is_low_light(raw_frame, self.threshold)
             
             if not is_low:
                 self.latest_enhanced_frame = None
@@ -458,6 +461,7 @@ async def offer(request: Request):
     offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
     session_id = params.get("session_id")
     model_type = params.get("model_type", "wakeup")  # "wakeup", "network", or "sci"
+    threshold = params.get("threshold", 100)  # Default threshold
 
     pc = RTCPeerConnection()
     pcs.add(pc)
@@ -472,15 +476,15 @@ async def offer(request: Request):
     @pc.on("track")
     def on_track(track):
         if track.kind == "video":
-            print(f"Video track received for session {session_id}, model: {model_type}")
+            print(f"Video track received for session {session_id}, model: {model_type}, threshold: {threshold}")
             
             # Choose which model track to use
             if model_type == "wakeup":
-                local_video = WakeupDarknessTrack(track, session_id)
+                local_video = WakeupDarknessTrack(track, session_id, threshold)
             elif model_type == "network":
-                local_video = NetworkWoCalibrateTrack(track, session_id)
+                local_video = NetworkWoCalibrateTrack(track, session_id, threshold)
             elif model_type == "sci":
-                local_video = SCITrack(track, session_id)
+                local_video = SCITrack(track, session_id, threshold)
             else:
                 print(f"Unknown model type: {model_type}")
                 return
