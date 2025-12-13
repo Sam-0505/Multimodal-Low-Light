@@ -42,7 +42,7 @@ except ImportError as e:
 
 # Initialize WakeupDarkness Engine
 engine = WakeupDarknessEngine(
-    enhance_weights=r"C:\Users\samir\Downloads\Code_Projects\Multimodal-Low-Light\weights\final\weights_999.pt",
+    enhance_weights=r"C:\Users\samir\Downloads\Code_Projects\Multimodal-Low-Light\weights\final\my_model.pt",
     fastsam_weights=r"C:\Users\samir\Downloads\Code_Projects\Multimodal-Low-Light\weights\FastSAM-s.pt"
 )
 
@@ -51,7 +51,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # Load EnhanceNetwork
 enhance_model = Network_woCalibrate()
-weights_dict = torch.load(r"C:\Users\samir\Downloads\Code_Projects\Multimodal-Low-Light\weights\final\weights_999.pt", map_location=device)
+weights_dict = torch.load(r"C:\Users\samir\Downloads\Code_Projects\Multimodal-Low-Light\weights\final\wakeupdarkness.pt", map_location=device)
 model_dict = enhance_model.state_dict()
 weights_dict = {k: v for k, v in weights_dict.items() if k in model_dict}
 model_dict.update(weights_dict)
@@ -210,7 +210,7 @@ class WakeupDarknessTrack(VideoTransformTrack):
     """Video track using WakeupDarknessEngine."""
     
     def __init__(self, track, session_id, threshold=100):
-        super().__init__(track, session_id, "WakeupDarkness", threshold)
+        super().__init__(track, session_id, "Our Model", threshold)
 
     async def enhancement_worker(self):
         """Background worker for WakeupDarknessEngine."""
@@ -371,6 +371,8 @@ class SCITrack(VideoTransformTrack):
         if not SCI_AVAILABLE or sci_model is None:
             print("SCI model not available")
             return
+        
+        print("SCI enhancement worker started")
             
         while True:
             await asyncio.sleep(0.01)  # Reduced frequency
@@ -402,6 +404,7 @@ class SCITrack(VideoTransformTrack):
                 await asyncio.sleep(0.01)
                 continue
             
+            print(f"SCI model - Starting enhancement (brightness: {brightness:.1f})")
             self.enhancing = True
 
             def run_inference():
@@ -413,9 +416,11 @@ class SCITrack(VideoTransformTrack):
                 with torch.no_grad():
                     # SCI expects input in [0, 1] range
                     input_tensor = to_tensor(image_pil).unsqueeze(0).cuda()
+                    print(f"SCI input tensor shape: {input_tensor.shape}, range: [{input_tensor.min():.3f}, {input_tensor.max():.3f}]")
                     
                     # Run SCI model
                     i, r = sci_model(input_tensor)
+                    print(f"SCI output tensor shape: {r.shape}, range: [{r.min():.3f}, {r.max():.3f}]")
                     
                     # Convert output tensor to numpy BGR
                     output_np = r.squeeze(0).cpu().numpy().transpose(1, 2, 0)
@@ -430,6 +435,7 @@ class SCITrack(VideoTransformTrack):
                 )
                 self.latest_enhanced_frame = enhanced
                 self.is_currently_enhanced = True
+                print(f"SCI model - Enhancement complete, output shape: {enhanced.shape}")
                 
                 # Track FPS
                 current_time = time.time()

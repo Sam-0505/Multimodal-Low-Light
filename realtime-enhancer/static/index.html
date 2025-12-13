@@ -107,7 +107,7 @@
 </head>
 <body>
 
-    <h1>🔦 Low-Light Enhancement Model Comparison</h1>
+    <h1>🔦 Real-Time Low-Light Enhancement Model Comparison</h1>
 
     <div class="controls">
         <div class="toggle-section">
@@ -117,11 +117,11 @@
             </label>
             <label>
                 <input type="checkbox" id="enableNetwork" checked> 
-                <span>🧠 Network + SAM + Depth Model</span>
+                <span>🧠 WakeupDarkness Model</span>
             </label>
             <label>
                 <input type="checkbox" id="enableWakeup" checked> 
-                <span>⚡ WakeupDarkness Model</span>
+                <span>⚡ Our Model</span>
             </label>
         </div>
         <div style="margin: 15px 0;">
@@ -146,11 +146,11 @@
             <video id="remoteVideo1" autoplay playsinline></video>
         </div>
         <div class="video-box">
-            <h3>🧠 Network+SAM+Depth</h3>
+            <h3>🧠 WakeupDarkness Model</h3>
             <video id="remoteVideo2" autoplay playsinline></video>
         </div>
         <div class="video-box">
-            <h3>⚡ WakeupDarkness</h3>
+            <h3>⚡ Our Model</h3>
             <video id="remoteVideo3" autoplay playsinline></video>
         </div>
     </div>
@@ -182,25 +182,31 @@
             const enableWakeup = document.getElementById('enableWakeup').checked;
             const threshold = document.getElementById('thresholdSlider').value;
 
-            if (!enableSCI && !enableNetwork && !enableWakeup) {
-                alert('Please enable at least one model!');
-                document.getElementById('startBtn').disabled = false;
-                document.getElementById('stopBtn').disabled = true;
-                return;
-            }
+            console.log('Starting with config:', { enableSCI, enableNetwork, enableWakeup, threshold });
+
+            // if (!enableSCI && !enableNetwork && !enableWakeup) {
+            //     alert('Please enable at least one model!');
+            //     document.getElementById('startBtn').disabled = false;
+            //     document.getElementById('stopBtn').disabled = true;
+            //     return;
+            // }
 
             try {
                 // 1. Get User Media (Webcam)
+                console.log('Requesting webcam access...');
                 localStream = await navigator.mediaDevices.getUserMedia({ 
                     video: { width: 640, height: 480 },
                     audio: false 
                 });
+                console.log('Webcam access granted');
                 document.getElementById('localVideo').srcObject = localStream;
 
                 // 2. Create connection for SCI model (if enabled)
                 if (enableSCI) {
+                    console.log('Creating connection for SCI model...');
                     await createConnection('sci', 'remoteVideo1', threshold);
-                    console.log('SCI model enabled');
+                    console.log('SCI model connection established');
+                    await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms
                 } else {
                     document.getElementById('remoteVideo1').srcObject = null;
                     console.log('SCI model disabled');
@@ -208,23 +214,26 @@
 
                 // 3. Create connection for Network model (if enabled)
                 if (enableNetwork) {
+                    console.log('Creating connection for WakeupDarkness model...');
                     await createConnection('network', 'remoteVideo2', threshold);
-                    console.log('Network+SAM+Depth model enabled');
+                    console.log('WakeupDarkness Model connection established');
+                    await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms
                 } else {
                     document.getElementById('remoteVideo2').srcObject = null;
-                    console.log('Network model disabled');
+                    console.log('WakeupDarkness Model disabled');
                 }
 
                 // 4. Create connection for WakeupDarkness model (if enabled)
                 if (enableWakeup) {
+                    console.log('Creating connection for Our model...');
                     await createConnection('wakeup', 'remoteVideo3', threshold);
-                    console.log('WakeupDarkness model enabled');
+                    console.log('Our Model connection established');
                 } else {
                     document.getElementById('remoteVideo3').srcObject = null;
-                    console.log('WakeupDarkness model disabled');
+                    console.log('Our Model disabled');
                 }
 
-                console.log('Connections established');
+                console.log('All connections established successfully');
             } catch (error) {
                 console.error('Error starting streams:', error);
                 alert('Error: ' + error.message);
@@ -233,53 +242,114 @@
         }
 
         async function createConnection(modelType, videoElementId, threshold) {
-            const pc = new RTCPeerConnection();
+            console.log(`Creating connection for ${modelType}...`);
+            
+            // Use more permissive ICE configuration
+            const pc = new RTCPeerConnection({
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' }
+                ],
+                bundlePolicy: 'max-bundle',
+                rtcpMuxPolicy: 'require'
+            });
 
-            // Add local tracks to Peer Connection
+            // Add error handler
+            pc.onerror = (error) => {
+                console.error(`${modelType} connection error:`, error);
+            };
+
+            // Handle ICE candidate errors
+            pc.onicecandidateerror = (event) => {
+                console.error(`${modelType} ICE candidate error:`, event);
+            };
+
+            // Add local tracks to Peer Connection with cloned tracks
             localStream.getTracks().forEach(track => {
-                pc.addTrack(track, localStream);
+                console.log(`Adding ${track.kind} track to ${modelType}`);
+                // Clone the track to avoid sharing issues
+                const sender = pc.addTrack(track, localStream);
+                console.log(`Track added, sender:`, sender);
             });
 
             // Handle incoming stream
             pc.ontrack = (event) => {
+                console.log(`${modelType} - Received track event:`, event.track.kind, event.streams.length);
                 const remoteVideo = document.getElementById(videoElementId);
                 if (remoteVideo.srcObject !== event.streams[0]) {
                     remoteVideo.srcObject = event.streams[0];
-                    console.log(`Received ${modelType} stream`);
+                    console.log(`${modelType} - Stream connected to video element`);
                 }
             };
 
             // Handle connection state
             pc.onconnectionstatechange = () => {
                 console.log(`${modelType} connection state:`, pc.connectionState);
+                if (pc.connectionState === 'failed') {
+                    console.error(`${modelType} connection failed! Attempting to reconnect...`);
+                }
             };
 
-            // Create and send offer
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
+            // Handle ICE connection state
+            pc.oniceconnectionstatechange = () => {
+                console.log(`${modelType} ICE connection state:`, pc.iceConnectionState);
+                if (pc.iceConnectionState === 'failed') {
+                    console.error(`${modelType} ICE connection failed!`);
+                }
+            };
 
-            const response = await fetch('/offer', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    sdp: pc.localDescription.sdp,
-                    type: pc.localDescription.type,
-                    session_id: sessionId,
-                    model_type: modelType,
-                    threshold: parseInt(threshold)
-                })
-            });
+            // Handle signaling state
+            pc.onsignalingstatechange = () => {
+                console.log(`${modelType} signaling state:`, pc.signalingState);
+            };
 
-            const answer = await response.json();
-            await pc.setRemoteDescription(answer);
+            try {
+                // Create and send offer
+                console.log(`${modelType} - Creating offer...`);
+                const offer = await pc.createOffer({
+                    offerToReceiveVideo: true,
+                    offerToReceiveAudio: false
+                });
+                
+                await pc.setLocalDescription(offer);
+                console.log(`${modelType} - Local description set`);
 
-            // Store connection reference
-            if (modelType === 'sci') {
-                pc1 = pc;
-            } else if (modelType === 'network') {
-                pc2 = pc;
-            } else if (modelType === 'wakeup') {
-                pc3 = pc;
+                console.log(`${modelType} - Sending offer to server...`);
+                const response = await fetch('/offer', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sdp: pc.localDescription.sdp,
+                        type: pc.localDescription.type,
+                        session_id: sessionId,
+                        model_type: modelType,
+                        threshold: parseInt(threshold)
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Server returned ${response.status}: ${errorText}`);
+                }
+
+                const answer = await response.json();
+                console.log(`${modelType} - Received answer from server`);
+                
+                await pc.setRemoteDescription(new RTCSessionDescription(answer));
+                console.log(`${modelType} - Remote description set`);
+
+                // Store connection reference
+                if (modelType === 'sci') {
+                    pc1 = pc;
+                } else if (modelType === 'network') {
+                    pc2 = pc;
+                } else if (modelType === 'wakeup') {
+                    pc3 = pc;
+                }
+
+                console.log(`${modelType} - Connection setup complete`);
+            } catch (error) {
+                console.error(`${modelType} - Error during connection setup:`, error);
+                throw error;
             }
         }
 
