@@ -1,7 +1,7 @@
 <div align="center">
 <h1>Real-Time Multimodal Low-light Enhancement For Edge Devices</h1>
 </div>
-The goal is to adapt "Wakeup-Darkness" multimodal enhancement model to achieve the best possible quality-to-speed ratio for real-time XR deployment. The objective was to optimize the computational bottlenecks (segmentation & depth) while retaining the core fusion logic and removed the grounding dino to use automatic generation of FastSAM of create full segmentation maps.
+The goal is to adapt [Wakeup-Darkness](https://dl.acm.org/doi/full/10.1145/3711929) multimodal enhancement model to achieve the best possible quality-to-speed ratio for real-time XR deployment. The objective was to optimize the computational bottlenecks (segmentation & depth) while retaining the core fusion logic and removed the grounding dino to use automatic generation of FastSAM of create full segmentation maps.
 
 ## Architecture Summary
 <img width="1218" height="663" alt="image" src="https://github.com/user-attachments/assets/5cd1a8f5-278f-46a9-ad5c-3f969732615b" />
